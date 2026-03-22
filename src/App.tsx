@@ -54,8 +54,8 @@ export default function App() {
   // Setup state
   const [setupProfile, setSetupProfile] = useState<StudyProfile>('OfficeWorker');
   const [setupDays, setSetupDays] = useState(5);
-  const [setupSubject, setSetupSubject] = useState('Mathematics');
-  const [setupTopic, setSetupTopic] = useState('Probability');
+  const [setupSubject, setSetupSubject] = useState('Transformation');
+  const [setupTopic, setSetupTopic] = useState('Electric Charge');
   const [setupUnit, setSetupUnit] = useState('');
   const [setupPart, setSetupPart] = useState('');
   const [setupLesson, setSetupLesson] = useState('');
@@ -87,8 +87,8 @@ export default function App() {
           // Old format, migrate to new format
           const initialCycle: StudyCycle = {
             id: crypto.randomUUID(),
-            subject: parsed.subject || 'Mathematics',
-            topic: parsed.topic || 'Probability',
+            subject: parsed.subject || 'Transformation',
+            topic: parsed.topic || 'Electric Charge',
             subTopic: parsed.subTopic || 'General Study',
             startDate: parsed.startDate || format(new Date(), 'yyyy-MM-dd'),
             days: parsed.days,
@@ -371,8 +371,8 @@ export default function App() {
           // Legacy import migration
           const initialCycle: StudyCycle = {
             id: crypto.randomUUID(),
-            subject: parsed.subject || 'Mathematics',
-            topic: parsed.topic || 'Probability',
+            subject: parsed.subject || 'Transformation',
+            topic: parsed.topic || 'Electric Charge',
             subTopic: parsed.subTopic || 'General Study',
             startDate: parsed.startDate || format(new Date(), 'yyyy-MM-dd'),
             days: parsed.days,
@@ -547,7 +547,7 @@ export default function App() {
                       value={setupSubject}
                       onChange={(e) => setSetupSubject(e.target.value)}
                       className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-serif italic text-3xl focus:border-zinc-900 transition-colors"
-                      placeholder="e.g. Mathematics"
+                      placeholder="e.g. Transformation"
                     />
                   </div>
                   <div className="space-y-3">
@@ -557,7 +557,7 @@ export default function App() {
                       value={setupTopic}
                       onChange={(e) => setSetupTopic(e.target.value)}
                       className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-serif italic text-3xl focus:border-zinc-900 transition-colors"
-                      placeholder="e.g. Probability"
+                      placeholder="e.g. Electric Charge"
                     />
                   </div>
                   <div className="space-y-3">

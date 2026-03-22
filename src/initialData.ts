@@ -73,8 +73,8 @@ const getSpacedRepetitionChunks = (
 export const createInitialCycle = (
   profile: StudyProfile = 'OfficeWorker',
   numDays: number = 5,
-  subject: string = 'Mathematics',
-  topic: string = 'Probability',
+  subject: string = 'Transformation',
+  topic: string = 'Electric Charge',
   startDate: Date = new Date(),
   extraFields: {
     unit?: string;
