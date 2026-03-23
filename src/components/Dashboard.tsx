@@ -43,15 +43,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ plannerData, onBack }) => 
     const completedBlocks = allBlocks.filter(b => b.done).length;
     const totalBlocks = allBlocks.length;
     
+    const chunksWithRecall = allChunks.filter(c => c.recallScore !== undefined);
+    const avgRecall = chunksWithRecall.length > 0 
+      ? chunksWithRecall.reduce((acc, c) => acc + (c.recallScore || 0), 0) / chunksWithRecall.length 
+      : 0;
+
     // Daily progress (aggregated by date)
-    const dailyMap = new Map<string, { planned: number, actual: number }>();
+    const dailyMap = new Map<string, { planned: number, actual: number, recall: number, recallCount: number }>();
     cyclesToAnalyze.forEach(cycle => {
       cycle.days.forEach(day => {
         const dateKey = day.date;
-        const current = dailyMap.get(dateKey) || { planned: 0, actual: 0 };
+        const current = dailyMap.get(dateKey) || { planned: 0, actual: 0, recall: 0, recallCount: 0 };
+        
+        const dayRecallChunks = day.chunks.filter(c => c.recallScore !== undefined);
+        const dayRecallSum = dayRecallChunks.reduce((acc, c) => acc + (c.recallScore || 0), 0);
+        
         dailyMap.set(dateKey, {
           planned: current.planned + day.chunks.reduce((acc, c) => acc + c.plannedMin, 0),
           actual: current.actual + day.chunks.reduce((acc, c) => acc + c.actualMin, 0),
+          recall: current.recall + dayRecallSum,
+          recallCount: current.recallCount + dayRecallChunks.length
         });
       });
     });
@@ -60,7 +71,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ plannerData, onBack }) => 
       .map(([date, values]) => ({
         date,
         name: format(parseISO(date), 'MMM dd'),
-        ...values
+        planned: values.planned,
+        actual: values.actual,
+        recall: values.recallCount > 0 ? values.recall / values.recallCount : 0
       }))
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(-14); // Show last 14 days of activity
@@ -93,10 +106,38 @@ export const Dashboard: React.FC<DashboardProps> = ({ plannerData, onBack }) => 
     const projectedMonthly = avgDailyActual * 30;
     const projectedYearly = avgDailyActual * 365;
 
+    // Grading Logic
+    const completionScore = (completedBlocks / (totalBlocks || 1)) * 100;
+    const recallScore = avgRecall;
+    const intensityScore = totalPlanned > 0 ? (totalActual / totalPlanned) * 100 : 0;
+    
+    let grade = 'D';
+    let gradeColor = 'text-rose-500';
+    let gradeDesc = 'Needs more consistency and focus.';
+
+    if (completionScore > 95 && recallScore > 4.5 && intensityScore > 90) {
+      grade = 'A+';
+      gradeColor = 'text-emerald-500';
+      gradeDesc = 'Exceptional mastery and discipline.';
+    } else if (completionScore > 85 && recallScore > 4.0) {
+      grade = 'A';
+      gradeColor = 'text-emerald-400';
+      gradeDesc = 'Strong performance and retention.';
+    } else if (completionScore > 70 && recallScore > 3.0) {
+      grade = 'B';
+      gradeColor = 'text-indigo-400';
+      gradeDesc = 'Good progress, keep pushing.';
+    } else if (completionScore > 50 && recallScore > 2.0) {
+      grade = 'C';
+      gradeColor = 'text-amber-400';
+      gradeDesc = 'Average performance, focus on recall.';
+    }
+
     return {
       totalPlanned,
       totalActual,
       totalGaps,
+      avgRecall,
       completionRate: totalBlocks > 0 ? (completedBlocks / totalBlocks) * 100 : 0,
       dailyData,
       techniqueData,
@@ -105,7 +146,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ plannerData, onBack }) => 
       projectedYearly,
       avgDailyActual,
       totalCycles: plannerData.cycles.length,
-      completedCycles: plannerData.cycles.filter(c => c.completed).length
+      completedCycles: plannerData.cycles.filter(c => c.completed).length,
+      grade,
+      gradeColor,
+      gradeDesc
     };
   }, [plannerData, selectedCycleId]);
 
@@ -122,8 +166,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ plannerData, onBack }) => 
             <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
           </button>
           <div className="space-y-1">
-            <h2 className="text-4xl font-serif italic text-zinc-900">Performance Intelligence</h2>
-            <p className="text-xs font-mono text-zinc-400 uppercase tracking-widest">Advanced analytics & learning velocity</p>
+            <h2 className="text-4xl font-display font-bold tracking-tight text-zinc-900">Performance Intelligence</h2>
+            <p className="text-[10px] font-mono text-zinc-400 uppercase tracking-[0.3em]">Advanced analytics & learning velocity</p>
           </div>
         </div>
         
@@ -149,12 +193,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ plannerData, onBack }) => 
       </div>
 
       {/* Top Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="p-8 bg-zinc-900 text-white rounded-3xl shadow-2xl flex flex-col items-center justify-center text-center relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 blur-3xl rounded-full -mr-16 -mt-16" />
+          <span className="text-[10px] font-mono uppercase tracking-widest opacity-40 mb-4">Performance Grade</span>
+          <div className={cn("text-7xl font-display font-bold tracking-tighter mb-2", stats.gradeColor)}>{stats.grade}</div>
+          <p className="text-[10px] font-mono opacity-60 uppercase tracking-widest leading-relaxed">{stats.gradeDesc}</p>
+        </motion.div>
+
         {[
           { label: 'Total Learning', value: `${Math.round(stats.totalActual / 60)}h`, sub: `${stats.totalActual}m logged`, icon: Clock, color: 'text-zinc-900' },
           { label: 'Avg Efficiency', value: `${Math.round(stats.completionRate)}%`, sub: 'Task completion', icon: Target, color: 'text-emerald-500' },
-          { label: 'Active Cycles', value: stats.totalCycles, sub: `${stats.completedCycles} completed`, icon: BookOpen, color: 'text-indigo-500' },
-          { label: 'Daily Intensity', value: `${Math.round(stats.avgDailyActual)}m`, sub: 'Average per day', icon: Zap, color: 'text-amber-500' },
+          { label: 'Avg Recall', value: stats.avgRecall.toFixed(1), sub: 'Memory Score (0-5)', icon: Zap, color: 'text-indigo-500' },
+          { label: 'Active Cycles', value: stats.totalCycles, sub: `${stats.completedCycles} completed`, icon: BookOpen, color: 'text-blue-500' },
+          { label: 'Daily Intensity', value: `${Math.round(stats.avgDailyActual)}m`, sub: 'Average per day', icon: Activity, color: 'text-amber-500' },
         ].map((stat, i) => (
           <motion.div 
             key={i}
@@ -169,7 +225,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ plannerData, onBack }) => 
                 <stat.icon size={16} />
               </div>
             </div>
-            <div className={cn("text-4xl font-serif italic", stat.color)}>{stat.value}</div>
+            <div className={cn("text-4xl font-mono font-bold tracking-tight", stat.color)}>{stat.value}</div>
             <div className="text-[10px] font-mono opacity-40 mt-2 tracking-widest uppercase">{stat.sub}</div>
           </motion.div>
         ))}
@@ -202,41 +258,62 @@ export const Dashboard: React.FC<DashboardProps> = ({ plannerData, onBack }) => 
           </ResponsiveContainer>
         </div>
 
-        {/* Technique Distribution */}
+        {/* Memory Retention Chart */}
         <div className="p-8 bg-white border border-zinc-100 rounded-3xl shadow-xl shadow-zinc-100/50 h-[450px]">
           <h3 className="text-xs font-mono uppercase tracking-widest text-zinc-400 mb-8 flex items-center gap-3">
-            <Target size={14} className="text-emerald-500" /> Technique Distribution
+            <Zap size={14} className="text-indigo-500" /> Memory Retention (LTM Tracking)
           </h3>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={stats.techniqueData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={80}
-                  outerRadius={120}
-                  paddingAngle={8}
-                  dataKey="value"
-                >
-                  {stats.techniqueData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ border: 'none', borderRadius: '16px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontFamily: 'monospace', fontSize: '10px' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex flex-wrap gap-6 mt-8 justify-center">
-            {stats.techniqueData.slice(0, 6).map((entry, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-                <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">{entry.name}</span>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={stats.dailyData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f1f1" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontFamily: 'monospace', fill: '#a1a1aa' }} />
+              <YAxis domain={[0, 5]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontFamily: 'monospace', fill: '#a1a1aa' }} />
+              <Tooltip 
+                contentStyle={{ border: 'none', borderRadius: '16px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontFamily: 'monospace', fontSize: '10px' }}
+              />
+              <Line type="monotone" dataKey="recall" stroke="#6366f1" strokeWidth={4} dot={{ r: 6, fill: '#6366f1', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 8 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Profile Breakdown */}
+      <div className="p-10 bg-white border border-zinc-100 rounded-3xl shadow-xl shadow-zinc-100/50">
+        <h3 className="text-xs font-mono uppercase tracking-widest text-zinc-400 mb-10 flex items-center gap-3">
+          <Target size={14} className="text-indigo-500" /> Performance by Study Profile
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {['OfficeWorker', 'Intensive', 'Balanced'].map((profile) => {
+            const profileCycles = plannerData.cycles.filter(c => c.profile === profile);
+            const chunks = profileCycles.flatMap(c => c.days.flatMap(d => d.chunks));
+            const actual = chunks.reduce((acc, ch) => acc + ch.actualMin, 0);
+            const planned = chunks.reduce((acc, ch) => acc + ch.plannedMin, 0);
+            const count = profileCycles.length;
+            
+            if (count === 0) return null;
+
+            return (
+              <div key={profile} className="p-6 bg-zinc-50 rounded-2xl border border-zinc-100 space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-400">{profile}</span>
+                  <span className="px-2 py-1 bg-zinc-900 text-white text-[8px] font-mono rounded-md">{count} Cycles</span>
+                </div>
+                <div className="text-2xl font-mono font-bold text-zinc-900">{Math.round(actual / 60)}H logged</div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[9px] font-mono uppercase opacity-40">
+                    <span>Efficiency</span>
+                    <span>{planned > 0 ? Math.round((actual / planned) * 100) : 0}%</span>
+                  </div>
+                  <div className="h-1 bg-zinc-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-zinc-900" 
+                      style={{ width: `${planned > 0 ? Math.min((actual / planned) * 100, 100) : 0}%` }}
+                    />
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </div>
 
@@ -270,12 +347,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ plannerData, onBack }) => 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-12 relative z-10">
             <div className="space-y-2">
               <div className="text-[10px] font-mono uppercase opacity-40 tracking-widest">Projected Monthly</div>
-              <div className="text-6xl font-serif italic text-emerald-400 tracking-tighter">{Math.round(stats.projectedMonthly / 60)}H</div>
+              <div className="text-6xl font-mono font-bold text-emerald-400 tracking-tighter">{Math.round(stats.projectedMonthly / 60)}H</div>
               <div className="text-[10px] font-mono opacity-40 mt-2">Based on current {stats.avgDailyActual.toFixed(0)}m/day</div>
             </div>
             <div className="space-y-2">
               <div className="text-[10px] font-mono uppercase opacity-40 tracking-widest">Projected Yearly</div>
-              <div className="text-6xl font-serif italic text-indigo-400 tracking-tighter">{Math.round(stats.projectedYearly / 60)}H</div>
+              <div className="text-6xl font-mono font-bold text-indigo-400 tracking-tighter">{Math.round(stats.projectedYearly / 60)}H</div>
               <div className="text-[10px] font-mono opacity-40 mt-2">Total learning volume</div>
             </div>
           </div>

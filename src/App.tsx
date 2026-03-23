@@ -24,7 +24,12 @@ import {
   X,
   Layout,
   Target,
-  Zap
+  Zap,
+  BookOpen,
+  Activity,
+  Github,
+  Sparkles,
+  Cpu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, parseISO, isValid, differenceInMinutes, addMinutes, startOfDay, addDays } from 'date-fns';
@@ -50,17 +55,18 @@ export default function App() {
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
   const [view, setView] = useState<'setup' | 'overview' | 'detail' | 'dashboard'>('setup');
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [showManual, setShowManual] = useState(false);
 
   // Setup state
   const [setupProfile, setSetupProfile] = useState<StudyProfile>('OfficeWorker');
-  const [setupDays, setSetupDays] = useState(5);
-  const [setupSubject, setSetupSubject] = useState('Transformation');
-  const [setupTopic, setSetupTopic] = useState('Electric Charge');
+  const [setupDays, setSetupDays] = useState(30);
+  const [setupSubject, setSetupSubject] = useState('Mathematics');
+  const [setupTopic, setSetupTopic] = useState('Probability');
   const [setupUnit, setSetupUnit] = useState('');
   const [setupPart, setSetupPart] = useState('');
   const [setupLesson, setSetupLesson] = useState('');
   const [setupChapter, setSetupChapter] = useState('');
-  const [setupSession, setSetupSession] = useState('');
+  const [setupSession, setSetupSession] = useState('Session 1');
   const [setupSourceType, setSetupSourceType] = useState<StudyCycle['sourceType']>('Book');
   const [setupStartDate, setSetupStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -87,8 +93,8 @@ export default function App() {
           // Old format, migrate to new format
           const initialCycle: StudyCycle = {
             id: crypto.randomUUID(),
-            subject: parsed.subject || 'Transformation',
-            topic: parsed.topic || 'Electric Charge',
+            subject: parsed.subject || 'Mathematics',
+            topic: parsed.topic || 'Probability',
             subTopic: parsed.subTopic || 'General Study',
             startDate: parsed.startDate || format(new Date(), 'yyyy-MM-dd'),
             days: parsed.days,
@@ -208,7 +214,7 @@ export default function App() {
     if (!cycle) return;
 
     const targetChunk = cycle.days.flatMap(d => d.chunks).find(c => c.id === chunkId);
-    const shouldSync = updates.notes !== undefined || updates.urlLinks !== undefined;
+    const shouldSync = updates.notes !== undefined || updates.urlLinks !== undefined || updates.sessionName !== undefined;
 
     const newDays = cycle.days.map(day => ({
       ...day,
@@ -216,7 +222,7 @@ export default function App() {
         if (chunk.id === chunkId) {
           return { ...chunk, ...updates };
         }
-        if (shouldSync && targetChunk && chunk.name === targetChunk.name) {
+        if (shouldSync && targetChunk && chunk.name === targetChunk.name && chunk.date === targetChunk.date) {
           return { ...chunk, ...updates };
         }
         return chunk;
@@ -238,9 +244,15 @@ export default function App() {
       ...day,
       chunks: day.chunks.map(chunk => {
         if (chunk.id !== chunkId) return chunk;
-        const newBlocks = chunk.blocks.map(block => 
+        const updatedBlocks = chunk.blocks.map(block => 
           block.id === blockId ? { ...block, ...updates } : block
         );
+        const newBlocks = updatedBlocks.map((block, idx) => {
+          if (idx === 0) return { ...block, gapMin: 0 };
+          const prevBlock = updatedBlocks[idx - 1];
+          const gap = differenceInMinutes(parseISO(block.startTime), parseISO(prevBlock.endTime));
+          return { ...block, gapMin: Math.max(0, gap) };
+        });
         const totalActual = newBlocks.reduce((acc, b) => acc + b.actualMin, 0);
         return { ...chunk, blocks: newBlocks, actualMin: totalActual };
       })
@@ -276,6 +288,7 @@ export default function App() {
         startTime: blockDate.toISOString(),
         endTime: blockDate.toISOString(),
         actualMin: 0,
+        diffMin: 0,
         gapMin: 0,
         outputRequired: t.output,
         done: false,
@@ -320,7 +333,7 @@ export default function App() {
     const end = field === 'endTime' ? newDate : otherDate;
     
     updates.actualMin = Math.max(0, differenceInMinutes(end, start));
-    updates.gapMin = Math.max(0, updates.actualMin - block.plannedMin);
+    updates.diffMin = block.plannedMin - updates.actualMin;
     
     updateBlock(chunkId, blockId, updates);
   };
@@ -371,8 +384,8 @@ export default function App() {
           // Legacy import migration
           const initialCycle: StudyCycle = {
             id: crypto.randomUUID(),
-            subject: parsed.subject || 'Transformation',
-            topic: parsed.topic || 'Electric Charge',
+            subject: parsed.subject || 'Mathematics',
+            topic: parsed.topic || 'Probability',
             subTopic: parsed.subTopic || 'General Study',
             startDate: parsed.startDate || format(new Date(), 'yyyy-MM-dd'),
             days: parsed.days,
@@ -390,6 +403,88 @@ export default function App() {
         }
       } catch (err) {
         alert('Invalid JSON file');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const exportToJson = () => {
+    if (!data) return;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `planner_data_${format(new Date(), 'yyyy-MM-dd')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportToCsv = () => {
+    if (!data) return;
+    const headers = ['CycleID', 'Subject', 'Topic', 'Date', 'SessionName', 'Type', 'PlannedMin', 'ActualMin', 'Done', 'RecallScore', 'EffortLevel'];
+    const rows = data.cycles.flatMap(cycle => 
+      cycle.days.flatMap(day => 
+        day.chunks.map(chunk => [
+          cycle.id,
+          `"${cycle.subject.replace(/"/g, '""')}"`,
+          `"${cycle.topic.replace(/"/g, '""')}"`,
+          day.date,
+          `"${(chunk.sessionName || chunk.name).replace(/"/g, '""')}"`,
+          chunk.type,
+          chunk.plannedMin,
+          chunk.actualMin,
+          chunk.done,
+          chunk.recallScore || '',
+          chunk.effortLevel || ''
+        ])
+      )
+    );
+
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `planner_data_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportJson = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        if (parsed && Array.isArray(parsed.cycles)) {
+          setData(parsed);
+          setView('overview');
+        } else {
+          alert('Invalid Planner Data format');
+        }
+      } catch (err) {
+        alert('Error parsing JSON');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImportCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const lines = text.split('\n');
+        if (lines.length < 2) return;
+        
+        // This is a simplified CSV import that only works if the format matches exactly
+        // In a real app, we'd need a more robust parser.
+        alert('CSV Import is for data analysis. For full restoration, please use JSON Import.');
+      } catch (err) {
+        alert('Error parsing CSV');
       }
     };
     reader.readAsText(file);
@@ -494,8 +589,16 @@ export default function App() {
                   <Zap size={14} className="text-emerald-500" />
                   <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-zinc-500">v2.5 Professional Edition</span>
                 </motion.div>
-                <h1 className="text-8xl font-serif italic tracking-tighter text-zinc-900 leading-none">Planner App</h1>
+                <h1 className="text-8xl font-display font-bold tracking-tighter text-zinc-900 leading-none">Planner App</h1>
                 <p className="text-sm font-mono uppercase tracking-[0.5em] text-zinc-400">Architecting Knowledge with Precision</p>
+                
+                <div className="flex items-center justify-center gap-4 pt-4">
+                  <label className="flex items-center gap-2 px-6 py-3 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-2xl cursor-pointer transition-all group">
+                    <Upload size={16} className="text-zinc-400 group-hover:text-zinc-900" />
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-500 group-hover:text-zinc-900">Restore from Backup</span>
+                    <input type="file" accept=".json" onChange={handleImportJson} className="hidden" />
+                  </label>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -515,7 +618,7 @@ export default function App() {
                   >
                     <div className="space-y-6">
                       <div className="flex items-center justify-between">
-                        <h3 className="font-serif italic text-3xl">{PROFILE_CONFIGS[p].name}</h3>
+                        <h3 className="font-display font-bold text-3xl tracking-tight">{PROFILE_CONFIGS[p].name}</h3>
                         {setupProfile === p && <CheckCircle2 size={24} className="text-emerald-400" />}
                       </div>
                       <p className="text-sm opacity-70 leading-relaxed font-medium">
@@ -546,8 +649,8 @@ export default function App() {
                       type="text" 
                       value={setupSubject}
                       onChange={(e) => setSetupSubject(e.target.value)}
-                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-serif italic text-3xl focus:border-zinc-900 transition-colors"
-                      placeholder="e.g. Transformation"
+                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-display font-bold text-3xl focus:border-zinc-900 transition-colors tracking-tight"
+                      placeholder="e.g. Mathematics"
                     />
                   </div>
                   <div className="space-y-3">
@@ -556,8 +659,8 @@ export default function App() {
                       type="text" 
                       value={setupTopic}
                       onChange={(e) => setSetupTopic(e.target.value)}
-                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-serif italic text-3xl focus:border-zinc-900 transition-colors"
-                      placeholder="e.g. Electric Charge"
+                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-display font-bold text-3xl focus:border-zinc-900 transition-colors tracking-tight"
+                      placeholder="e.g. Probability"
                     />
                   </div>
                   <div className="space-y-3">
@@ -566,7 +669,7 @@ export default function App() {
                       type="date" 
                       value={setupStartDate}
                       onChange={(e) => setSetupStartDate(e.target.value)}
-                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-serif italic text-3xl focus:border-zinc-900 transition-colors"
+                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-display font-bold text-3xl focus:border-zinc-900 transition-colors tracking-tight"
                     />
                   </div>
 
@@ -576,7 +679,7 @@ export default function App() {
                       type="text" 
                       value={setupUnit}
                       onChange={(e) => setSetupUnit(e.target.value)}
-                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-serif italic text-3xl focus:border-zinc-900 transition-colors"
+                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-display font-bold text-3xl focus:border-zinc-900 transition-colors tracking-tight"
                       placeholder="e.g. Unit 1"
                     />
                   </div>
@@ -586,7 +689,7 @@ export default function App() {
                       type="text" 
                       value={setupPart}
                       onChange={(e) => setSetupPart(e.target.value)}
-                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-serif italic text-3xl focus:border-zinc-900 transition-colors"
+                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-display font-bold text-3xl focus:border-zinc-900 transition-colors tracking-tight"
                       placeholder="e.g. Part A"
                     />
                   </div>
@@ -612,7 +715,7 @@ export default function App() {
                     />
                   </div>
                   <div className="space-y-3">
-                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">Subject Session</label>
+                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">Session</label>
                     <input 
                       type="text" 
                       value={setupSession}
@@ -645,7 +748,7 @@ export default function App() {
                 <div className="space-y-6">
                   <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 block">Plan Duration (Days)</label>
                   <div className="flex gap-6">
-                    {[5].map(d => (
+                    {[5, 15, 30].map(d => (
                       <button
                         key={d}
                         onClick={() => setSetupDays(d)}
@@ -656,7 +759,7 @@ export default function App() {
                             : "bg-white border-zinc-100 hover:border-zinc-300"
                         )}
                       >
-                        {d} Days
+                        {d} Days {d === 30 && "(LTM Optimized)"}
                       </button>
                     ))}
                   </div>
@@ -669,6 +772,51 @@ export default function App() {
                   Initialize Learning Engine
                   <ChevronRight size={24} className="group-hover:translate-x-2 transition-transform" />
                 </button>
+
+                {/* Developer & Platform Info */}
+                <footer className="mt-24 pt-12 border-t border-zinc-100 w-full flex flex-col md:flex-row items-center justify-between gap-12">
+                  <div className="flex flex-col gap-3">
+                    <span className="text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-400">Developer</span>
+                    <div className="flex items-center gap-6">
+                      <span className="text-3xl font-display font-bold tracking-tight text-zinc-900">Gobal Krishnan V</span>
+                      <div className="flex items-center gap-3">
+                        <a 
+                          href="https://github.com/engineer-work/planner-app" 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="p-2.5 bg-zinc-50 hover:bg-zinc-900 hover:text-white rounded-xl transition-all shadow-sm"
+                          title="GitHub Source"
+                        >
+                          <Github size={18} />
+                        </a>
+                        <a 
+                          href="https://orcid.org/0009-0001-3787-2860" 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="px-3 py-2 bg-zinc-50 hover:bg-zinc-900 hover:text-white rounded-xl transition-all shadow-sm flex items-center gap-2"
+                          title="ORCID Profile"
+                        >
+                          <span className="text-[10px] font-mono font-bold tracking-tighter">ORCID</span>
+                          <ExternalLink size={12} />
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col md:items-end gap-3">
+                    <span className="text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-400">I used Google AI Studio and Gemini to make this app</span>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-3 px-4 py-2 bg-zinc-50 rounded-2xl border border-zinc-100 shadow-sm">
+                        <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-600">Google AI Studio</span>
+                      </div>
+                      <div className="flex items-center gap-3 px-4 py-2 bg-zinc-900 text-white rounded-2xl shadow-xl">
+                        <Sparkles size={14} className="text-indigo-400" />
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-widest">Gemini AI</span>
+                      </div>
+                    </div>
+                  </div>
+                </footer>
               </motion.div>
             </div>
           </motion.div>
@@ -691,7 +839,7 @@ export default function App() {
                 </div>
                 <div>
                   <div className="flex items-center gap-3">
-                    <h1 className="text-xl font-serif italic tracking-tight text-zinc-900">
+                    <h1 className="text-xl font-display font-bold tracking-tight text-zinc-900">
                       {activeCycle?.subject || 'Planner App'}
                     </h1>
                     <div className="flex items-center gap-2">
@@ -753,6 +901,59 @@ export default function App() {
               </div>
 
               <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 border-r border-zinc-200 pr-4 mr-2">
+                  <div className="relative group/export">
+                    <button className="p-3 bg-zinc-100 text-zinc-500 hover:text-zinc-900 rounded-xl transition-all flex items-center gap-2">
+                      <Download size={18} />
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-widest hidden md:block">Export</span>
+                    </button>
+                    <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-zinc-200 rounded-2xl shadow-2xl opacity-0 invisible group-hover/export:opacity-100 group-hover/export:visible transition-all z-[60] overflow-hidden">
+                      <button onClick={exportToJson} className="w-full px-4 py-3 text-left text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-zinc-50 flex items-center gap-3">
+                        <FileJson size={14} className="text-amber-500" /> JSON Backup
+                      </button>
+                      <button onClick={exportToCsv} className="w-full px-4 py-3 text-left text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-zinc-50 flex items-center gap-3">
+                        <FileSpreadsheet size={14} className="text-emerald-500" /> CSV Analysis
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="relative group/import">
+                    <button className="p-3 bg-zinc-100 text-zinc-500 hover:text-zinc-900 rounded-xl transition-all flex items-center gap-2">
+                      <Upload size={18} />
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-widest hidden md:block">Import</span>
+                    </button>
+                    <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-zinc-200 rounded-2xl shadow-2xl opacity-0 invisible group-hover/import:opacity-100 group-hover/import:visible transition-all z-[60] overflow-hidden">
+                      <label className="w-full px-4 py-3 text-left text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-zinc-50 flex items-center gap-3 cursor-pointer">
+                        <FileJson size={14} className="text-amber-500" /> JSON Restore
+                        <input type="file" accept=".json" onChange={handleImportJson} className="hidden" />
+                      </label>
+                      <label className="w-full px-4 py-3 text-left text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-zinc-50 flex items-center gap-3 cursor-pointer">
+                        <FileSpreadsheet size={14} className="text-emerald-500" /> CSV Import
+                        <input type="file" accept=".csv" onChange={handleImportCsv} className="hidden" />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => setView('dashboard')}
+                  className={cn(
+                    "p-3 rounded-xl transition-all flex items-center gap-2 group",
+                    view === 'dashboard' ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500 hover:text-zinc-900"
+                  )}
+                >
+                  <BarChart3 size={18} />
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-widest hidden md:block">Dashboard</span>
+                </button>
+
+                <button 
+                  onClick={() => setShowManual(true)}
+                  className="p-3 bg-zinc-100 text-zinc-500 hover:text-zinc-900 rounded-xl transition-all flex items-center gap-2 group"
+                  title="User Manual"
+                >
+                  <BookOpen size={18} className="group-hover:scale-110 transition-transform" />
+                  <span className="text-[10px] font-mono uppercase font-bold hidden sm:inline">Manual</span>
+                </button>
                 <div className="flex items-center gap-3 bg-zinc-50 px-4 py-2 border border-zinc-200 rounded-xl">
                   <Globe size={14} className="text-zinc-400" />
                   <select 
@@ -873,6 +1074,8 @@ export default function App() {
                                 <th className="p-6 w-20 text-center border-r border-zinc-200">Hours</th>
                                 <th className="p-6 w-36 border-r border-zinc-200">Action</th>
                                 <th className="p-6 w-24 text-center border-r border-zinc-200">Chunk</th>
+                                <th className="p-6 w-24 text-center border-r border-zinc-200">Recall</th>
+                                <th className="p-6 w-24 text-center border-r border-zinc-200">Effort</th>
                                 <th className="p-6 w-24 text-center border-r border-zinc-200">Time</th>
                                 <th className="p-6 w-32 border-r border-zinc-200">Dates</th>
                                 <th className="p-6 w-24 border-r border-zinc-200">Day Name</th>
@@ -927,27 +1130,60 @@ export default function App() {
                                             </div>
                                           </td>
                                         )}
-                                        <td className="p-4 border-r border-zinc-100">
-                                          <div className={cn(
-                                            "w-full px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-center rounded-xl shadow-sm",
-                                            chunk.type === 'Prepare' ? "bg-red-600 text-white" : 
-                                            chunk.type === 'Review' ? "bg-emerald-600 text-white" : 
-                                            "bg-zinc-900 text-white"
-                                          )}>
-                                            {chunk.type}
-                                          </div>
+                                        <td className="p-4 border-r border-zinc-100" onClick={e => e.stopPropagation()}>
+                                          {(() => {
+                                            const isSpecialProfile = activeCycle?.profile === 'OfficeWorker' || activeCycle?.profile === 'Intensive';
+                                            const chunkColor = chunk.name === 'A' ? "bg-red-600" :
+                                                             chunk.name === 'B' ? "bg-pink-600" :
+                                                             chunk.name === 'C' ? "bg-blue-600" :
+                                                             chunk.name === 'D' ? "bg-zinc-900" :
+                                                             "bg-purple-800";
+                                            return (
+                                              <div className={cn(
+                                                "w-full px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-center rounded-xl shadow-sm text-white",
+                                                (isSpecialProfile && chunk.type === 'Prepare') ? chunkColor :
+                                                chunk.type === 'Prepare' ? "bg-red-600" : 
+                                                chunk.type === 'Review' ? "bg-emerald-600" : 
+                                                "bg-zinc-900"
+                                              )}>
+                                                {chunk.type} {chunk.sessionName && `- ${chunk.sessionName}`}
+                                              </div>
+                                            );
+                                          })()}
                                         </td>
                                         <td className="p-4 text-center border-r border-zinc-100">
                                           <span className={cn(
                                             "text-[10px] font-bold font-mono px-4 py-2 rounded-xl text-white shadow-sm block uppercase tracking-widest",
                                             chunk.name === 'A' ? "bg-red-600" :
-                                            chunk.name === 'B' ? "bg-emerald-600" :
+                                            chunk.name === 'B' ? "bg-pink-600" :
                                             chunk.name === 'C' ? "bg-blue-600" :
                                             chunk.name === 'D' ? "bg-zinc-900" :
                                             "bg-purple-800"
                                           )}>
                                             {chunk.name}
                                           </span>
+                                        </td>
+                                        <td className="p-4 text-center border-r border-zinc-100" onClick={e => e.stopPropagation()}>
+                                          <select 
+                                            value={chunk.recallScore || 0}
+                                            onChange={(e) => updateChunk(chunk.id, { recallScore: parseInt(e.target.value) })}
+                                            className="bg-zinc-50 border border-zinc-100 rounded-lg px-2 py-1 text-[10px] font-mono font-bold outline-none focus:ring-2 ring-zinc-200 w-full"
+                                          >
+                                            {[0, 1, 2, 3, 4, 5].map(s => (
+                                              <option key={s} value={s}>{s}</option>
+                                            ))}
+                                          </select>
+                                        </td>
+                                        <td className="p-4 text-center border-r border-zinc-100" onClick={e => e.stopPropagation()}>
+                                          <select 
+                                            value={chunk.effortLevel || 'Medium'}
+                                            onChange={(e) => updateChunk(chunk.id, { effortLevel: e.target.value as any })}
+                                            className="bg-zinc-50 border border-zinc-100 rounded-lg px-2 py-1 text-[10px] font-mono font-bold outline-none focus:ring-2 ring-zinc-200 w-full"
+                                          >
+                                            {['Easy', 'Medium', 'Hard'].map(l => (
+                                              <option key={l} value={l}>{l}</option>
+                                            ))}
+                                          </select>
                                         </td>
                                         <td className="p-4 text-center border-r border-zinc-100">
                                           <div className="text-sm font-mono font-bold text-zinc-900">{chunk.plannedMin}</div>
@@ -1041,7 +1277,9 @@ export default function App() {
                               <span className="w-1 h-1 bg-zinc-300 rounded-full" />
                               <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-500 font-bold">{selectedChunk.type}</span>
                             </div>
-                            <h2 className="text-4xl font-serif italic text-zinc-900">Chunk {selectedChunk.name} Architecture</h2>
+                            <h2 className="text-4xl font-serif italic text-zinc-900">
+                              Chunk {selectedChunk.name} {selectedChunk.sessionName ? `- ${selectedChunk.sessionName}` : 'Architecture'}
+                            </h2>
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
@@ -1071,6 +1309,7 @@ export default function App() {
                                     <th className="p-5 w-24 text-center border-r border-zinc-200">Target</th>
                                     <th className="p-5 w-48 border-r border-zinc-200">Timeline</th>
                                     <th className="p-5 w-20 text-center border-r border-zinc-200">Actual</th>
+                                    <th className="p-5 w-20 text-center border-r border-zinc-200">Diff</th>
                                     <th className="p-5 w-20 text-center border-r border-zinc-200">Gap</th>
                                     <th className="p-5 border-r border-zinc-200">Comment</th>
                                     <th className="p-5 w-16 text-center">Done</th>
@@ -1130,7 +1369,13 @@ export default function App() {
                                       <td className="p-5 text-center border-r border-zinc-100">
                                         <div className={cn(
                                           "text-sm font-mono font-bold",
-                                          block.gapMin > 0 ? "text-red-500" : "text-zinc-400"
+                                          block.diffMin !== 0 ? "text-red-500" : "text-zinc-400"
+                                        )}>{block.diffMin}m</div>
+                                      </td>
+                                      <td className="p-5 text-center border-r border-zinc-100">
+                                        <div className={cn(
+                                          "text-sm font-mono font-bold",
+                                          block.gapMin > 0 ? "text-amber-500" : "text-zinc-400"
                                         )}>{block.gapMin}m</div>
                                       </td>
                                       <td className="p-5 border-r border-zinc-100">
@@ -1140,13 +1385,13 @@ export default function App() {
                                             onChange={(e) => updateBlock(selectedChunk.id, block.id, { gapReason: e.target.value })}
                                             className={cn(
                                               "w-full bg-zinc-50 border rounded-lg p-2 text-[10px] outline-none transition-all min-h-[40px] resize-none",
-                                              block.gapMin > 0 && !block.gapReason 
+                                              (block.diffMin !== 0 || block.gapMin > 0) && !block.gapReason 
                                                 ? "border-red-200 focus:border-red-400 bg-red-50/30" 
                                                 : "border-zinc-100 focus:border-zinc-300"
                                             )}
-                                            placeholder={block.gapMin > 0 ? "Reason required for gap..." : "Add comment..."}
+                                            placeholder={(block.diffMin !== 0 || block.gapMin > 0) ? "Reason required for diff/gap..." : "Add comment..."}
                                           />
-                                          {block.gapMin > 0 && !block.gapReason && (
+                                          {(block.diffMin !== 0 || block.gapMin > 0) && !block.gapReason && (
                                             <div className="absolute top-1 right-1">
                                               <Zap size={10} className="text-red-400 animate-pulse" />
                                             </div>
@@ -1193,6 +1438,18 @@ export default function App() {
                           <div className="bg-white border border-zinc-100 rounded-3xl p-8 shadow-xl shadow-zinc-100/50 space-y-6">
                             <h3 className="text-xs font-mono uppercase tracking-widest text-zinc-400">Strategic Insights</h3>
                             <div className="space-y-4">
+                              {(selectedChunk.type === 'Prepare' || ((activeCycle?.profile === 'OfficeWorker' || activeCycle?.profile === 'Intensive') && selectedChunk.type === 'Review')) && (
+                                <div className="space-y-2">
+                                  <label className="text-[10px] font-mono uppercase opacity-50">Session Name</label>
+                                  <input 
+                                    type="text"
+                                    value={selectedChunk.sessionName || ''}
+                                    onChange={(e) => updateChunk(selectedChunk.id, { sessionName: e.target.value })}
+                                    className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-zinc-300 transition-all"
+                                    placeholder="e.g. Chapter 1, Lecture 2..."
+                                  />
+                                </div>
+                              )}
                               <div className="space-y-2">
                                 <label className="text-[10px] font-mono uppercase opacity-50">Module Notes</label>
                                 <textarea 
@@ -1348,6 +1605,112 @@ export default function App() {
                 </span>
               </div>
             </footer>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showManual && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-zinc-900/60 backdrop-blur-md"
+            onClick={() => setShowManual(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-10 overflow-y-auto">
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-zinc-900 rounded-2xl flex items-center justify-center text-white">
+                      <BookOpen size={24} />
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-display font-bold tracking-tight text-zinc-900">User Manual</h2>
+                      <p className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest">Long-Term Memory Optimization</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowManual(false)} className="p-2 hover:bg-zinc-100 rounded-full transition-colors">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="space-y-8">
+                  <section className="space-y-4">
+                    <h3 className="text-xs font-mono uppercase tracking-widest text-indigo-600 font-bold">1. The LTM Architecture</h3>
+                    <p className="text-sm text-zinc-600 leading-relaxed">
+                      This application is built on the principles of <strong>Spaced Repetition</strong> and <strong>Active Recall</strong>. 
+                      Unlike traditional study planners that focus on short-term cramming, our system extends your learning cycle to 30 days to ensure deep encoding into long-term memory.
+                    </p>
+                  </section>
+
+                  <section className="space-y-4">
+                    <h3 className="text-xs font-mono uppercase tracking-widest text-emerald-600 font-bold">2. The 30-Day Cycle</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
+                        <div className="text-[10px] font-mono text-zinc-400 uppercase mb-2">Days 1-5</div>
+                        <div className="text-xs font-bold text-zinc-900">Consolidation Phase</div>
+                        <p className="text-[10px] text-zinc-500 mt-1">Deep learning of new material (A, B, C, D) with immediate reviews.</p>
+                      </div>
+                      <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
+                        <div className="text-[10px] font-mono text-zinc-400 uppercase mb-2">Days 7, 10, 15, 30</div>
+                        <div className="text-xs font-bold text-zinc-900">Retention Phase</div>
+                        <p className="text-[10px] text-zinc-500 mt-1">Scheduled recalls to interrupt the forgetting curve and stabilize memory.</p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="space-y-4">
+                    <h3 className="text-xs font-mono uppercase tracking-widest text-amber-600 font-bold">3. Tracking Performance</h3>
+                    <p className="text-sm text-zinc-600 leading-relaxed">
+                      For every study session, you should log two critical metrics:
+                    </p>
+                    <ul className="space-y-3">
+                      <li className="flex gap-3">
+                        <div className="w-5 h-5 bg-amber-100 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                          <Zap size={10} className="text-amber-600" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-zinc-900">Recall Score (0-5):</span>
+                          <p className="text-[10px] text-zinc-500">How easily could you retrieve the information? 5 = Perfect, 0 = Forgot everything.</p>
+                        </div>
+                      </li>
+                      <li className="flex gap-3">
+                        <div className="w-5 h-5 bg-emerald-100 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                          <Activity size={10} className="text-emerald-600" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-zinc-900">Effort Level:</span>
+                          <p className="text-[10px] text-zinc-500">How much mental energy did it take? Easy, Medium, or Hard.</p>
+                        </div>
+                      </li>
+                    </ul>
+                  </section>
+
+                  <section className="space-y-4">
+                    <h3 className="text-xs font-mono uppercase tracking-widest text-zinc-400 font-bold">4. Dynamic Sessions</h3>
+                    <p className="text-sm text-zinc-600 leading-relaxed">
+                      For the <strong>Five-Day Study Plan</strong> and <strong>15h/day</strong> profiles, sessions are automatically named <strong>Session A, B, C, D</strong> to match their study cycle. 
+                      The <strong>Prepare</strong> badge in these profiles will also take on the color of the session (e.g., Session A is Red, Session B is Green).
+                      You can edit the <strong>Session Name</strong> in the module detail view to specify exactly what you are working on (e.g., "Chapter 1", "Video Lecture 2").
+                    </p>
+                  </section>
+                </div>
+              </div>
+              <div className="p-10 bg-zinc-50 border-t border-zinc-100">
+                <button 
+                  onClick={() => setShowManual(false)}
+                  className="w-full bg-zinc-900 text-white py-4 rounded-2xl font-mono uppercase tracking-widest hover:bg-zinc-800 transition-all"
+                >
+                  Got it, let's learn
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

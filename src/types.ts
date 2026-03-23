@@ -7,11 +7,14 @@ export interface StudyBlock {
   startTime: string; // ISO string
   endTime: string; // ISO string
   actualMin: number;
-  gapMin: number;
+  diffMin: number; // Planned - Actual
+  gapMin: number; // Time between blocks
   gapReason?: string;
   outputRequired: string;
   done: boolean;
   urls?: string[];
+  recallScore?: number; // 0-5
+  effortLevel?: 'Easy' | 'Medium' | 'Hard';
 }
 
 export interface StudyChunk {
@@ -29,6 +32,9 @@ export interface StudyChunk {
   endTime: string; // HH:mm
   urlLinks: string;
   notes: string;
+  recallScore?: number; // 0-5
+  effortLevel?: 'Easy' | 'Medium' | 'Hard';
+  sessionName?: string;
 }
 
 export interface StudyDay {
