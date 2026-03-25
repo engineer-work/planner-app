@@ -8,6 +8,7 @@ export interface StudyBlock {
   endTime: string; // ISO string
   actualMin: number;
   diffMin: number; // Planned - Actual
+  diffReason?: string;
   gapMin: number; // Time between blocks
   gapReason?: string;
   outputRequired: string;
@@ -35,6 +36,7 @@ export interface StudyChunk {
   recallScore?: number; // 0-5
   effortLevel?: 'Easy' | 'Medium' | 'Hard';
   sessionName?: string;
+  techniqueTemplate?: TechniqueTemplate;
 }
 
 export interface StudyDay {
@@ -108,6 +110,16 @@ export const PROFILE_CONFIGS: Record<StudyProfile, ProfileConfig> = {
   }
 };
 
+export const SIMULATION_PREP_TECHNIQUES = [
+  { name: '3P', activity: 'Watch/read once', time: 10, output: 'Watch transcript' },
+  { name: 'SQ3R + S-RUN', activity: 'Cues + Notes + Mermaid + Summary', time: 40, output: 'This is where your pattern-form document lives' },
+  { name: 'Active Recall', activity: 'Use quizzes to test yourself', time: 15, output: 'Use the quizzes you created' },
+  { name: 'Active Recall (Create)', activity: 'Create quiz questions + test bank', time: 15, output: 'This is where quiz creation lives' },
+  { name: 'Application', activity: 'Problem solving', time: 50, output: 'Solve novel problems' },
+  { name: 'Deliberate Practice', activity: 'Edge cases + verification', time: 30, output: 'Use multiple methods to verify' },
+  { name: 'Feynman', activity: 'Explain without notes', time: 20, output: 'Verbally explain your summary' },
+];
+
 export const DEFAULT_TECHNIQUES = [
   { name: '3P', activity: 'Watch / Read Once', time: 10, output: 'Basic understanding' },
   { name: 'SQ3R', activity: 'Deep Understanding', time: 20, output: '3 examples solved' },
@@ -117,3 +129,16 @@ export const DEFAULT_TECHNIQUES = [
   { name: 'Deliberate Practice', activity: 'Testing / Edge Cases', time: 30, output: 'All cases handled' },
   { name: 'Feynman', activity: 'Recall & Explain', time: 20, output: 'Clear explanation' },
 ];
+
+export type TechniqueTemplate = 'SimulationPrep' | 'DocumentPrep';
+
+export const TECHNIQUE_TEMPLATES: Record<TechniqueTemplate, { name: string, techniques: typeof DEFAULT_TECHNIQUES }> = {
+  SimulationPrep: {
+    name: 'Simulation Preparation',
+    techniques: DEFAULT_TECHNIQUES
+  },
+  DocumentPrep: {
+    name: 'Document Preparation',
+    techniques: SIMULATION_PREP_TECHNIQUES
+  }
+};

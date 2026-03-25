@@ -34,10 +34,28 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { format, parseISO, isValid, differenceInMinutes, addMinutes, startOfDay, addDays } from 'date-fns';
 import { formatInTimeZone, toDate, fromZonedTime, toZonedTime } from 'date-fns-tz';
-import { StudyCycle, PlannerData, StudyDay, StudyChunk, StudyBlock, DEFAULT_TECHNIQUES, StudyProfile, PROFILE_CONFIGS } from './types';
+import { 
+  StudyCycle, 
+  PlannerData, 
+  StudyDay, 
+  StudyChunk, 
+  StudyBlock, 
+  DEFAULT_TECHNIQUES, 
+  StudyProfile, 
+  PROFILE_CONFIGS,
+  TECHNIQUE_TEMPLATES,
+  TechniqueTemplate
+} from './types';
 import { createInitialCycle, createInitialStore } from './initialData';
 import { cn } from './lib/utils';
 import { Dashboard } from './components/Dashboard';
+import { DocumentPrepManual } from './components/DocumentPrepManual';
+import { SimulationPrepManual } from './components/SimulationPrepManual';
+import { ASIRoadmapManual } from './components/ASIRoadmapManual';
+import { RatioFrameworkManual } from './components/RatioFrameworkManual';
+import { PersonalRoadmapManual } from './components/PersonalRoadmapManual';
+import { MilestoneTrackerManual } from './components/MilestoneTrackerManual';
+import { DigitalTrackerManual } from './components/DigitalTrackerManual';
 
 const TIMEZONES = [
   'Asia/Kolkata',
@@ -56,6 +74,7 @@ export default function App() {
   const [view, setView] = useState<'setup' | 'overview' | 'detail' | 'dashboard'>('setup');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showManual, setShowManual] = useState(false);
+  const [manualTab, setManualTab] = useState<'general' | 'docprep' | 'simulation' | 'asi' | 'ratio' | 'personal' | 'tracker' | 'digital'>('general');
 
   // Setup state
   const [setupProfile, setSetupProfile] = useState<StudyProfile>('OfficeWorker');
@@ -264,7 +283,7 @@ export default function App() {
     setData({ ...data, cycles: newCycles });
   };
 
-  const regenerateBlocks = (chunkId: string) => {
+  const regenerateBlocks = (chunkId: string, template: TechniqueTemplate = 'SimulationPrep') => {
     if (!data || !data.activeCycleId) return;
     const cycle = data.cycles.find(c => c.id === data.activeCycleId);
     if (!cycle) return;
@@ -272,8 +291,10 @@ export default function App() {
     const chunk = cycle.days.flatMap(d => d.chunks).find(c => c.id === chunkId);
     if (!chunk) return;
 
-    const totalDefaultTime = DEFAULT_TECHNIQUES.reduce((acc, t) => acc + t.time, 0);
-    const newBlocks: StudyBlock[] = DEFAULT_TECHNIQUES.map((t, idx) => {
+    const templateToUse = (template in TECHNIQUE_TEMPLATES) ? template : 'SimulationPrep';
+    const techniques = TECHNIQUE_TEMPLATES[templateToUse].techniques;
+    const totalDefaultTime = techniques.reduce((acc, t) => acc + t.time, 0);
+    const newBlocks: StudyBlock[] = techniques.map((t, idx) => {
       const scaledTime = Math.round((t.time / totalDefaultTime) * chunk.plannedMin);
       const finalTime = chunk.plannedMin > 0 ? Math.max(1, scaledTime) : 0;
       const blockDate = new Date(chunk.date);
@@ -290,13 +311,15 @@ export default function App() {
         actualMin: 0,
         diffMin: 0,
         gapMin: 0,
+        gapReason: '',
+        diffReason: '',
         outputRequired: t.output,
         done: false,
         urls: []
       };
     });
 
-    updateChunk(chunkId, { blocks: newBlocks, actualMin: 0 });
+    updateChunk(chunkId, { blocks: newBlocks, actualMin: 0, techniqueTemplate: templateToUse });
   };
 
   const calculateActualMin = (startTime: string, endTime: string) => {
@@ -601,7 +624,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {(Object.keys(PROFILE_CONFIGS) as StudyProfile[]).map((p, idx) => (
                   <motion.button
                     key={p}
@@ -890,7 +913,7 @@ export default function App() {
                   </div>
                   <div className="flex items-center gap-3">
                     <p className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest">
-                      {activeCycle ? PROFILE_CONFIGS[activeCycle.profile].name : 'Setup'} // {activeCycle?.days.length || 0} DAYS
+                      {activeCycle && PROFILE_CONFIGS[activeCycle.profile] ? PROFILE_CONFIGS[activeCycle.profile].name : 'Setup'} // {activeCycle?.days.length || 0} DAYS
                     </p>
                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
                     <p className="text-[10px] font-mono font-bold text-zinc-900 bg-zinc-100 px-2 py-0.5 rounded-full">
@@ -1003,7 +1026,7 @@ export default function App() {
                       <span className="text-[10px] font-mono uppercase tracking-[0.3em] text-emerald-400">Active Architecture</span>
                     </div>
                     <div className="space-y-2">
-                      <h2 className="text-5xl font-serif italic">{activeCycle ? PROFILE_CONFIGS[activeCycle.profile].name : 'Setup'}</h2>
+                      <h2 className="text-5xl font-serif italic">{activeCycle && PROFILE_CONFIGS[activeCycle.profile] ? PROFILE_CONFIGS[activeCycle.profile].name : 'Setup'}</h2>
                       {activeCycle && (
                         <div className="flex flex-wrap gap-x-6 gap-y-2 text-[10px] font-mono uppercase tracking-widest text-zinc-400">
                           {activeCycle.unit && <span>Unit: <span className="text-white">{activeCycle.unit}</span></span>}
@@ -1016,13 +1039,13 @@ export default function App() {
                       )}
                     </div>
                     <p className="text-sm opacity-60 leading-relaxed max-w-4xl font-medium">
-                      {activeCycle ? PROFILE_CONFIGS[activeCycle.profile].description : ''}
+                      {activeCycle && PROFILE_CONFIGS[activeCycle.profile] ? PROFILE_CONFIGS[activeCycle.profile].description : ''}
                     </p>
                   </div>
                   <div className="flex gap-12 text-center relative z-10 lg:border-l lg:border-white/10 lg:pl-12">
                     <div>
                       <div className="text-[10px] font-mono uppercase opacity-40 mb-2 tracking-widest">Daily Target</div>
-                      <div className="text-5xl font-bold tracking-tighter">{activeCycle ? PROFILE_CONFIGS[activeCycle.profile].minHoursPerDay : 0}H</div>
+                      <div className="text-5xl font-bold tracking-tighter">{activeCycle && PROFILE_CONFIGS[activeCycle.profile] ? PROFILE_CONFIGS[activeCycle.profile].minHoursPerDay : 0}H</div>
                     </div>
                     <div>
                       <div className="text-[10px] font-mono uppercase opacity-40 mb-2 tracking-widest">Horizon</div>
@@ -1287,51 +1310,105 @@ export default function App() {
                             <div className="text-[10px] font-mono uppercase opacity-40">Target Volume</div>
                             <div className="text-2xl font-bold font-mono">{selectedChunk.plannedMin}m</div>
                           </div>
-                          <button 
-                            onClick={() => regenerateBlocks(selectedChunk.id)}
-                            className="flex items-center gap-2 text-[10px] font-mono uppercase bg-white border border-zinc-200 text-zinc-900 px-6 py-3 rounded-2xl hover:bg-zinc-50 transition-all shadow-sm"
-                          >
-                            <RefreshCw size={14} /> Re-Architect Blocks
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 bg-white border border-zinc-200 rounded-2xl px-4 py-2 shadow-sm">
+                              <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest">Format:</span>
+                              <select 
+                                className="bg-transparent text-[10px] font-mono uppercase font-bold text-zinc-900 outline-none cursor-pointer"
+                                onChange={(e) => regenerateBlocks(selectedChunk.id, e.target.value as TechniqueTemplate)}
+                                defaultValue="SimulationPrep"
+                              >
+                                {Object.entries(TECHNIQUE_TEMPLATES).map(([key, value]) => (
+                                  <option key={key} value={key}>{value.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <button 
+                              onClick={() => regenerateBlocks(selectedChunk.id)}
+                              className="flex items-center gap-2 text-[10px] font-mono uppercase bg-white border border-zinc-200 text-zinc-900 px-6 py-3 rounded-2xl hover:bg-zinc-50 transition-all shadow-sm"
+                            >
+                              <RefreshCw size={14} /> Re-Architect Blocks
+                            </button>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-                        <div className="xl:col-span-2 space-y-6">
+                      <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
+                        <div className="xl:col-span-3 space-y-6">
                           {selectedChunk.blocks.length > 0 ? (
-                            <div className="bg-white border border-zinc-200 rounded-3xl shadow-xl shadow-zinc-100/50 overflow-hidden">
-                              <table className="w-full text-left border-collapse">
+                            <div className="bg-white border border-zinc-200 rounded-3xl shadow-xl shadow-zinc-100/50 overflow-x-auto">
+                              <table className="w-full text-left border-collapse min-w-[1400px]">
                                 <thead>
                                   <tr className="bg-zinc-50/50 border-b border-zinc-200 text-[9px] font-mono uppercase tracking-widest text-zinc-400">
-                                    <th className="p-5 w-12 text-center border-r border-zinc-200">#</th>
-                                    <th className="p-5 w-40 border-r border-zinc-200">Technique</th>
-                                    <th className="p-5 border-r border-zinc-200">Activity & Output</th>
-                                    <th className="p-5 w-24 text-center border-r border-zinc-200">Target</th>
-                                    <th className="p-5 w-48 border-r border-zinc-200">Timeline</th>
-                                    <th className="p-5 w-20 text-center border-r border-zinc-200">Actual</th>
-                                    <th className="p-5 w-20 text-center border-r border-zinc-200">Diff</th>
-                                    <th className="p-5 w-20 text-center border-r border-zinc-200">Gap</th>
-                                    <th className="p-5 border-r border-zinc-200">Comment</th>
-                                    <th className="p-5 w-16 text-center">Done</th>
+                                    <th className="p-4 w-10 text-center border-r border-zinc-200">#</th>
+                                    <th className="p-4 w-32 border-r border-zinc-200">Technique</th>
+                                    <th className="p-4 w-48 border-r border-zinc-200">
+                                      {selectedChunk.techniqueTemplate === 'DocumentPrep' ? 'Activity & Output' : 'Activity & Output'}
+                                    </th>
+                                    <th className="p-4 w-20 text-center border-r border-zinc-200">
+                                      {selectedChunk.techniqueTemplate === 'DocumentPrep' ? 'Time' : 'Target'}
+                                    </th>
+                                    <th className="p-4 w-48 border-r border-zinc-200">Diff Comment</th>
+                                    {selectedChunk.techniqueTemplate === 'DocumentPrep' && (
+                                      <th className="p-4 w-48 border-r border-zinc-200">Your Document Work</th>
+                                    )}
+                                    <th className="p-4 w-40 border-r border-zinc-200">Timeline</th>
+                                    <th className="p-4 w-16 text-center border-r border-zinc-200">Actual</th>
+                                    <th className="p-4 w-16 text-center border-r border-zinc-200">Diff</th>
+                                    <th className="p-4 w-16 text-center border-r border-zinc-200">Gap</th>
+                                    <th className="p-4 w-48 border-r border-zinc-200">Gap Comment</th>
+                                    <th className="p-4 w-32 border-r border-zinc-200">Proof</th>
+                                    <th className="p-4 w-16 text-center">Done</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-200">
                                   {selectedChunk.blocks.map((block) => (
                                     <tr key={block.id} className="group hover:bg-zinc-50/30 transition-colors">
-                                      <td className="p-5 text-center font-mono text-[10px] text-zinc-400 border-r border-zinc-100">{block.blockNumber}</td>
-                                      <td className="p-5 border-r border-zinc-100">
+                                      <td className="p-4 text-center font-mono text-[10px] text-zinc-400 border-r border-zinc-100">{block.blockNumber}</td>
+                                      <td className="p-4 border-r border-zinc-100">
                                         <div className="space-y-1">
                                           <div className="text-sm font-bold text-zinc-900">{block.technique}</div>
-                                          <div className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider">{block.activity}</div>
+                                          {selectedChunk.techniqueTemplate !== 'DocumentPrep' && (
+                                            <div className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider">{block.activity}</div>
+                                          )}
                                         </div>
                                       </td>
-                                      <td className="p-5 border-r border-zinc-100">
-                                        <div className="text-xs text-zinc-600 leading-relaxed italic">"{block.outputRequired}"</div>
+                                      <td className="p-4 border-r border-zinc-100">
+                                        <div className="text-xs text-zinc-600 leading-relaxed italic">
+                                          {selectedChunk.techniqueTemplate === 'DocumentPrep' ? block.activity : `"${block.outputRequired}"`}
+                                        </div>
                                       </td>
-                                      <td className="p-5 text-center border-r border-zinc-100">
+                                      <td className="p-4 text-center border-r border-zinc-100">
                                         <div className="text-sm font-mono font-bold text-zinc-900">{block.plannedMin}m</div>
                                       </td>
-                                      <td className="p-5 border-r border-zinc-100">
+                                      <td className="p-4 border-r border-zinc-100">
+                                        <div className="relative">
+                                            <textarea 
+                                              value={block.diffReason || ''}
+                                              onChange={(e) => updateBlock(selectedChunk.id, block.id, { diffReason: e.target.value })}
+                                              className={cn(
+                                                "w-full bg-zinc-50 border rounded-lg p-2 text-[10px] outline-none transition-all min-h-[60px] resize-y",
+                                                block.diffMin !== 0 && !block.diffReason 
+                                                  ? "border-red-200 focus:border-red-400 bg-red-50/30" 
+                                                  : "border-zinc-100 focus:border-zinc-300"
+                                              )}
+                                              placeholder={block.diffMin !== 0 ? "Reason required..." : "Add diff comment..."}
+                                            />
+                                          {block.diffMin !== 0 && !block.diffReason && (
+                                            <div className="absolute top-1 right-1">
+                                              <Zap size={10} className="text-red-400 animate-pulse" />
+                                            </div>
+                                          )}
+                                        </div>
+                                      </td>
+                                      {selectedChunk.techniqueTemplate === 'DocumentPrep' && (
+                                        <td className="p-4 border-r border-zinc-100">
+                                          <div className="text-xs text-zinc-600 leading-relaxed font-bold">
+                                            {block.outputRequired}
+                                          </div>
+                                        </td>
+                                      )}
+                                      <td className="p-4 border-r border-zinc-100">
                                         <div className="flex flex-col gap-2">
                                           <div className="flex items-center gap-2">
                                             <input 
@@ -1363,42 +1440,53 @@ export default function App() {
                                           </div>
                                         </div>
                                       </td>
-                                      <td className="p-5 text-center border-r border-zinc-100">
+                                      <td className="p-4 text-center border-r border-zinc-100">
                                         <div className="text-sm font-mono font-bold text-zinc-900">{block.actualMin}m</div>
                                       </td>
-                                      <td className="p-5 text-center border-r border-zinc-100">
+                                      <td className="p-4 text-center border-r border-zinc-100">
                                         <div className={cn(
                                           "text-sm font-mono font-bold",
                                           block.diffMin !== 0 ? "text-red-500" : "text-zinc-400"
                                         )}>{block.diffMin}m</div>
                                       </td>
-                                      <td className="p-5 text-center border-r border-zinc-100">
+                                      <td className="p-4 text-center border-r border-zinc-100">
                                         <div className={cn(
                                           "text-sm font-mono font-bold",
                                           block.gapMin > 0 ? "text-amber-500" : "text-zinc-400"
                                         )}>{block.gapMin}m</div>
                                       </td>
-                                      <td className="p-5 border-r border-zinc-100">
+                                      <td className="p-4 border-r border-zinc-100">
                                         <div className="relative">
                                           <textarea 
                                             value={block.gapReason || ''}
                                             onChange={(e) => updateBlock(selectedChunk.id, block.id, { gapReason: e.target.value })}
                                             className={cn(
-                                              "w-full bg-zinc-50 border rounded-lg p-2 text-[10px] outline-none transition-all min-h-[40px] resize-none",
-                                              (block.diffMin !== 0 || block.gapMin > 0) && !block.gapReason 
-                                                ? "border-red-200 focus:border-red-400 bg-red-50/30" 
+                                              "w-full bg-zinc-50 border rounded-lg p-2 text-[10px] outline-none transition-all min-h-[60px] resize-y",
+                                              block.gapMin > 0 && !block.gapReason 
+                                                ? "border-amber-200 focus:border-amber-400 bg-amber-50/30" 
                                                 : "border-zinc-100 focus:border-zinc-300"
                                             )}
-                                            placeholder={(block.diffMin !== 0 || block.gapMin > 0) ? "Reason required for diff/gap..." : "Add comment..."}
+                                            placeholder={block.gapMin > 0 ? "Reason required..." : "Add gap comment..."}
                                           />
-                                          {(block.diffMin !== 0 || block.gapMin > 0) && !block.gapReason && (
+                                          {block.gapMin > 0 && !block.gapReason && (
                                             <div className="absolute top-1 right-1">
-                                              <Zap size={10} className="text-red-400 animate-pulse" />
+                                              <Zap size={10} className="text-amber-400 animate-pulse" />
                                             </div>
                                           )}
                                         </div>
                                       </td>
-                                      <td className="p-5 text-center">
+                                      <td className="p-4 border-r border-zinc-100">
+                                        <div className="relative">
+                                          <input 
+                                            type="text"
+                                            value={block.urls?.[0] || ''}
+                                            onChange={(e) => updateBlock(selectedChunk.id, block.id, { urls: [e.target.value] })}
+                                            className="w-full bg-zinc-50 border border-zinc-100 rounded-lg p-2 text-[10px] outline-none focus:border-zinc-300"
+                                            placeholder="URL/Proof..."
+                                          />
+                                        </div>
+                                      </td>
+                                      <td className="p-4 text-center">
                                         <button 
                                           onClick={() => updateBlock(selectedChunk.id, block.id, { done: !block.done })}
                                           className="transition-all active:scale-90 hover:scale-110"
@@ -1424,17 +1512,31 @@ export default function App() {
                                 <h3 className="text-2xl font-serif italic text-zinc-900">Architecture Pending</h3>
                                 <p className="text-sm text-zinc-400 max-w-xs mx-auto">This module has no active study blocks. Initialize them to begin your session.</p>
                               </div>
-                              <button 
-                                onClick={() => regenerateBlocks(selectedChunk.id)}
-                                className="bg-zinc-900 text-white px-8 py-4 rounded-2xl font-mono uppercase tracking-widest text-[10px] hover:bg-zinc-800 transition-all shadow-xl shadow-zinc-200"
-                              >
-                                Initialize {selectedChunk.plannedMin}m Session
-                              </button>
+                              <div className="flex flex-col items-center gap-4">
+                                <div className="flex items-center gap-2 bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-2">
+                                  <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest">Format:</span>
+                                  <select 
+                                    className="bg-transparent text-[10px] font-mono uppercase font-bold text-zinc-900 outline-none cursor-pointer"
+                                    onChange={(e) => regenerateBlocks(selectedChunk.id, e.target.value as TechniqueTemplate)}
+                                    defaultValue="SimulationPrep"
+                                  >
+                                    {Object.entries(TECHNIQUE_TEMPLATES).map(([key, value]) => (
+                                      <option key={key} value={key}>{value.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <button 
+                                  onClick={() => regenerateBlocks(selectedChunk.id)}
+                                  className="bg-zinc-900 text-white px-8 py-4 rounded-2xl font-mono uppercase tracking-widest text-[10px] hover:bg-zinc-800 transition-all shadow-xl shadow-zinc-200"
+                                >
+                                  Initialize {selectedChunk.plannedMin}m Session
+                                </button>
+                              </div>
                             </div>
                           )}
                         </div>
 
-                        <div className="space-y-8">
+                        <div className="space-y-8 min-w-[320px]">
                           <div className="bg-white border border-zinc-100 rounded-3xl p-8 shadow-xl shadow-zinc-100/50 space-y-6">
                             <h3 className="text-xs font-mono uppercase tracking-widest text-zinc-400">Strategic Insights</h3>
                             <div className="space-y-4">
@@ -1621,85 +1723,180 @@ export default function App() {
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
-              className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+              className="bg-white w-full max-w-4xl rounded-[40px] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
               onClick={e => e.stopPropagation()}
             >
-              <div className="p-10 overflow-y-auto">
-                <div className="flex items-center justify-between mb-8">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-zinc-900 rounded-2xl flex items-center justify-center text-white">
-                      <BookOpen size={24} />
+              <div className="flex-1 overflow-y-auto">
+                <div className="p-10 pb-0">
+                  <div className="flex items-center justify-between mb-8">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-zinc-900 rounded-2xl flex items-center justify-center text-white">
+                        <BookOpen size={24} />
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-display font-bold tracking-tight text-zinc-900">Knowledge Base</h2>
+                        <p className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest">Strategic Learning & Execution</p>
+                      </div>
                     </div>
-                    <div>
-                      <h2 className="text-2xl font-display font-bold tracking-tight text-zinc-900">User Manual</h2>
-                      <p className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest">Long-Term Memory Optimization</p>
-                    </div>
+                    <button onClick={() => setShowManual(false)} className="p-2 hover:bg-zinc-100 rounded-full transition-colors">
+                      <X size={20} />
+                    </button>
                   </div>
-                  <button onClick={() => setShowManual(false)} className="p-2 hover:bg-zinc-100 rounded-full transition-colors">
-                    <X size={20} />
-                  </button>
+
+                  <div className="flex items-center gap-2 border-b border-zinc-100 mb-10">
+                    <button 
+                      onClick={() => setManualTab('general')}
+                      className={cn(
+                        "px-6 py-3 text-[10px] font-mono uppercase tracking-widest transition-all border-b-2",
+                        manualTab === 'general' ? "border-zinc-900 text-zinc-900 font-bold" : "border-transparent text-zinc-400 hover:text-zinc-600"
+                      )}
+                    >
+                      General Manual
+                    </button>
+                    <button 
+                      onClick={() => setManualTab('docprep')}
+                      className={cn(
+                        "px-6 py-3 text-[10px] font-mono uppercase tracking-widest transition-all border-b-2",
+                        manualTab === 'docprep' ? "border-emerald-500 text-emerald-600 font-bold" : "border-transparent text-zinc-400 hover:text-zinc-600"
+                      )}
+                    >
+                      Document Preparation
+                    </button>
+                    <button 
+                      onClick={() => setManualTab('simulation')}
+                      className={cn(
+                        "px-6 py-3 text-[10px] font-mono uppercase tracking-widest transition-all border-b-2",
+                        manualTab === 'simulation' ? "border-indigo-500 text-indigo-600 font-bold" : "border-transparent text-zinc-400 hover:text-zinc-600"
+                      )}
+                    >
+                      Simulation Preparation
+                    </button>
+                    <button 
+                      onClick={() => setManualTab('asi')}
+                      className={cn(
+                        "px-6 py-3 text-[10px] font-mono uppercase tracking-widest transition-all border-b-2",
+                        manualTab === 'asi' ? "border-purple-500 text-purple-600 font-bold" : "border-transparent text-zinc-400 hover:text-zinc-600"
+                      )}
+                    >
+                      ASI Roadmap
+                    </button>
+                    <button 
+                      onClick={() => setManualTab('ratio')}
+                      className={cn(
+                        "px-6 py-3 text-[10px] font-mono uppercase tracking-widest transition-all border-b-2",
+                        manualTab === 'ratio' ? "border-blue-500 text-blue-600 font-bold" : "border-transparent text-zinc-400 hover:text-zinc-600"
+                      )}
+                    >
+                      Ratio Framework
+                    </button>
+                    <button 
+                      onClick={() => setManualTab('personal')}
+                      className={cn(
+                        "px-6 py-3 text-[10px] font-mono uppercase tracking-widest transition-all border-b-2",
+                        manualTab === 'personal' ? "border-emerald-500 text-emerald-600 font-bold" : "border-transparent text-zinc-400 hover:text-zinc-600"
+                      )}
+                    >
+                      Personal Roadmap
+                    </button>
+                    <button 
+                      onClick={() => setManualTab('tracker')}
+                      className={cn(
+                        "px-6 py-3 text-[10px] font-mono uppercase tracking-widest transition-all border-b-2",
+                        manualTab === 'tracker' ? "border-zinc-900 text-zinc-900 font-bold" : "border-transparent text-zinc-400 hover:text-zinc-600"
+                      )}
+                    >
+                      Milestone Tracker
+                    </button>
+                    <button 
+                      onClick={() => setManualTab('digital')}
+                      className={cn(
+                        "px-6 py-3 text-[10px] font-mono uppercase tracking-widest transition-all border-b-2",
+                        manualTab === 'digital' ? "border-zinc-900 text-zinc-900 font-bold" : "border-transparent text-zinc-400 hover:text-zinc-600"
+                      )}
+                    >
+                      Digital Tracker
+                    </button>
+                  </div>
                 </div>
 
-                <div className="space-y-8">
-                  <section className="space-y-4">
-                    <h3 className="text-xs font-mono uppercase tracking-widest text-indigo-600 font-bold">1. The LTM Architecture</h3>
-                    <p className="text-sm text-zinc-600 leading-relaxed">
-                      This application is built on the principles of <strong>Spaced Repetition</strong> and <strong>Active Recall</strong>. 
-                      Unlike traditional study planners that focus on short-term cramming, our system extends your learning cycle to 30 days to ensure deep encoding into long-term memory.
-                    </p>
-                  </section>
+                <div className="px-10 pb-10">
+                  {manualTab === 'general' ? (
+                    <div className="space-y-8">
+                      <section className="space-y-4">
+                        <h3 className="text-xs font-mono uppercase tracking-widest text-indigo-600 font-bold">1. The LTM Architecture</h3>
+                        <p className="text-sm text-zinc-600 leading-relaxed">
+                          This application is built on the principles of <strong>Spaced Repetition</strong> and <strong>Active Recall</strong>. 
+                          Unlike traditional study planners that focus on short-term cramming, our system extends your learning cycle to 30 days to ensure deep encoding into long-term memory.
+                        </p>
+                      </section>
 
-                  <section className="space-y-4">
-                    <h3 className="text-xs font-mono uppercase tracking-widest text-emerald-600 font-bold">2. The 30-Day Cycle</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
-                        <div className="text-[10px] font-mono text-zinc-400 uppercase mb-2">Days 1-5</div>
-                        <div className="text-xs font-bold text-zinc-900">Consolidation Phase</div>
-                        <p className="text-[10px] text-zinc-500 mt-1">Deep learning of new material (A, B, C, D) with immediate reviews.</p>
-                      </div>
-                      <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
-                        <div className="text-[10px] font-mono text-zinc-400 uppercase mb-2">Days 7, 10, 15, 30</div>
-                        <div className="text-xs font-bold text-zinc-900">Retention Phase</div>
-                        <p className="text-[10px] text-zinc-500 mt-1">Scheduled recalls to interrupt the forgetting curve and stabilize memory.</p>
-                      </div>
+                      <section className="space-y-4">
+                        <h3 className="text-xs font-mono uppercase tracking-widest text-emerald-600 font-bold">2. The 30-Day Cycle</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
+                            <div className="text-[10px] font-mono text-zinc-400 uppercase mb-2">Days 1-5</div>
+                            <div className="text-xs font-bold text-zinc-900">Consolidation Phase</div>
+                            <p className="text-[10px] text-zinc-500 mt-1">Deep learning of new material (A, B, C, D) with immediate reviews.</p>
+                          </div>
+                          <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
+                            <div className="text-[10px] font-mono text-zinc-400 uppercase mb-2">Days 7, 10, 15, 30</div>
+                            <div className="text-xs font-bold text-zinc-900">Retention Phase</div>
+                            <p className="text-[10px] text-zinc-500 mt-1">Scheduled recalls to interrupt the forgetting curve and stabilize memory.</p>
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="space-y-4">
+                        <h3 className="text-xs font-mono uppercase tracking-widest text-amber-600 font-bold">3. Tracking Performance</h3>
+                        <p className="text-sm text-zinc-600 leading-relaxed">
+                          For every study session, you should log two critical metrics:
+                        </p>
+                        <ul className="space-y-3">
+                          <li className="flex gap-3">
+                            <div className="w-5 h-5 bg-amber-100 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                              <Zap size={10} className="text-amber-600" />
+                            </div>
+                            <div>
+                              <span className="text-xs font-bold text-zinc-900">Recall Score (0-5):</span>
+                              <p className="text-[10px] text-zinc-500">How easily could you retrieve the information? 5 = Perfect, 0 = Forgot everything.</p>
+                            </div>
+                          </li>
+                          <li className="flex gap-3">
+                            <div className="w-5 h-5 bg-emerald-100 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                              <Activity size={10} className="text-emerald-600" />
+                            </div>
+                            <div>
+                              <span className="text-xs font-bold text-zinc-900">Effort Level:</span>
+                              <p className="text-[10px] text-zinc-500">How much mental energy did it take? Easy, Medium, or Hard.</p>
+                            </div>
+                          </li>
+                        </ul>
+                      </section>
+
+                      <section className="space-y-4">
+                        <h3 className="text-xs font-mono uppercase tracking-widest text-zinc-400 font-bold">4. Dynamic Sessions</h3>
+                        <p className="text-sm text-zinc-600 leading-relaxed">
+                          For the <strong>Five-Day Study Plan</strong> and <strong>15h/day</strong> profiles, sessions are automatically named <strong>Session A, B, C, D</strong> to match their study cycle. 
+                          The <strong>Prepare</strong> badge in these profiles will also take on the color of the session (e.g., Session A is Red, Session B is Green).
+                          You can edit the <strong>Session Name</strong> in the module detail view to specify exactly what you are working on (e.g., "Chapter 1", "Video Lecture 2").
+                        </p>
+                      </section>
                     </div>
-                  </section>
-
-                  <section className="space-y-4">
-                    <h3 className="text-xs font-mono uppercase tracking-widest text-amber-600 font-bold">3. Tracking Performance</h3>
-                    <p className="text-sm text-zinc-600 leading-relaxed">
-                      For every study session, you should log two critical metrics:
-                    </p>
-                    <ul className="space-y-3">
-                      <li className="flex gap-3">
-                        <div className="w-5 h-5 bg-amber-100 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                          <Zap size={10} className="text-amber-600" />
-                        </div>
-                        <div>
-                          <span className="text-xs font-bold text-zinc-900">Recall Score (0-5):</span>
-                          <p className="text-[10px] text-zinc-500">How easily could you retrieve the information? 5 = Perfect, 0 = Forgot everything.</p>
-                        </div>
-                      </li>
-                      <li className="flex gap-3">
-                        <div className="w-5 h-5 bg-emerald-100 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                          <Activity size={10} className="text-emerald-600" />
-                        </div>
-                        <div>
-                          <span className="text-xs font-bold text-zinc-900">Effort Level:</span>
-                          <p className="text-[10px] text-zinc-500">How much mental energy did it take? Easy, Medium, or Hard.</p>
-                        </div>
-                      </li>
-                    </ul>
-                  </section>
-
-                  <section className="space-y-4">
-                    <h3 className="text-xs font-mono uppercase tracking-widest text-zinc-400 font-bold">4. Dynamic Sessions</h3>
-                    <p className="text-sm text-zinc-600 leading-relaxed">
-                      For the <strong>Five-Day Study Plan</strong> and <strong>15h/day</strong> profiles, sessions are automatically named <strong>Session A, B, C, D</strong> to match their study cycle. 
-                      The <strong>Prepare</strong> badge in these profiles will also take on the color of the session (e.g., Session A is Red, Session B is Green).
-                      You can edit the <strong>Session Name</strong> in the module detail view to specify exactly what you are working on (e.g., "Chapter 1", "Video Lecture 2").
-                    </p>
-                  </section>
+                  ) : manualTab === 'docprep' ? (
+                    <DocumentPrepManual />
+                  ) : manualTab === 'simulation' ? (
+                    <SimulationPrepManual />
+                  ) : manualTab === 'asi' ? (
+                    <ASIRoadmapManual />
+                  ) : manualTab === 'ratio' ? (
+                    <RatioFrameworkManual />
+                  ) : manualTab === 'personal' ? (
+                    <PersonalRoadmapManual />
+                  ) : manualTab === 'tracker' ? (
+                    <MilestoneTrackerManual />
+                  ) : (
+                    <DigitalTrackerManual />
+                  )}
                 </div>
               </div>
               <div className="p-10 bg-zinc-50 border-t border-zinc-100">

@@ -1,4 +1,4 @@
-import { StudyCycle, PlannerData, StudyDay, StudyChunk, StudyBlock, DEFAULT_TECHNIQUES, StudyProfile, PROFILE_CONFIGS } from './types';
+import { StudyCycle, PlannerData, StudyDay, StudyChunk, StudyBlock, DEFAULT_TECHNIQUES, SIMULATION_PREP_TECHNIQUES, StudyProfile, PROFILE_CONFIGS } from './types';
 import { addDays, format } from 'date-fns';
 
 const getSpacedRepetitionChunks = (
@@ -30,34 +30,34 @@ const getSpacedRepetitionChunks = (
   
   if (dayNumber === 1) {
     const mins = Math.round(180 * scale);
-    chunks.push(createChunk(dayNumber, 'A', 'Prepare', mins, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + mins), getSessName('A', 'Prepare')));
+    chunks.push(createChunk(dayNumber, 'A', 'Prepare', mins, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + mins), profile, getSessName('A', 'Prepare')));
   } else if (dayNumber === 2) {
     const minsB = Math.round(180 * scale);
     const minsA = Math.round(30 * scale);
-    chunks.push(createChunk(dayNumber, 'B', 'Prepare', minsB, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsB), getSessName('B', 'Prepare')));
+    chunks.push(createChunk(dayNumber, 'B', 'Prepare', minsB, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsB), profile, getSessName('B', 'Prepare')));
     currentMins += minsB;
-    chunks.push(createChunk(dayNumber, 'A', 'Review', minsA, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsA), getSessName('A', 'Review')));
+    chunks.push(createChunk(dayNumber, 'A', 'Review', minsA, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsA), profile, getSessName('A', 'Review')));
   } else if (dayNumber === 3) {
     const minsC = Math.round(180 * scale);
     const minsB = Math.round(30 * scale);
     const minsA = Math.round(15 * scale);
-    chunks.push(createChunk(dayNumber, 'C', 'Prepare', minsC, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsC), getSessName('C', 'Prepare')));
+    chunks.push(createChunk(dayNumber, 'C', 'Prepare', minsC, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsC), profile, getSessName('C', 'Prepare')));
     currentMins += minsC;
-    chunks.push(createChunk(dayNumber, 'B', 'Review', minsB, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsB), getSessName('B', 'Review')));
+    chunks.push(createChunk(dayNumber, 'B', 'Review', minsB, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsB), profile, getSessName('B', 'Review')));
     currentMins += minsB;
-    chunks.push(createChunk(dayNumber, 'A', 'Review', minsA, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsA), getSessName('A', 'Review')));
+    chunks.push(createChunk(dayNumber, 'A', 'Review', minsA, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsA), profile, getSessName('A', 'Review')));
   } else if (dayNumber === 4) {
     const minsD = Math.round(180 * scale);
     const minsC = Math.round(30 * scale);
     const minsB = Math.round(15 * scale);
     const minsA = Math.round(15 * scale);
-    chunks.push(createChunk(dayNumber, 'D', 'Prepare', minsD, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsD), getSessName('D', 'Prepare')));
+    chunks.push(createChunk(dayNumber, 'D', 'Prepare', minsD, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsD), profile, getSessName('D', 'Prepare')));
     currentMins += minsD;
-    chunks.push(createChunk(dayNumber, 'C', 'Review', minsC, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsC), getSessName('C', 'Review')));
+    chunks.push(createChunk(dayNumber, 'C', 'Review', minsC, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsC), profile, getSessName('C', 'Review')));
     currentMins += minsC;
-    chunks.push(createChunk(dayNumber, 'B', 'Review', minsB, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsB), getSessName('B', 'Review')));
+    chunks.push(createChunk(dayNumber, 'B', 'Review', minsB, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsB), profile, getSessName('B', 'Review')));
     currentMins += minsB;
-    chunks.push(createChunk(dayNumber, 'A', 'Review', minsA, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsA), getSessName('A', 'Review')));
+    chunks.push(createChunk(dayNumber, 'A', 'Review', minsA, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsA), profile, getSessName('A', 'Review')));
   } else if (dayNumber === 5) {
     const minsD = Math.round(25 * scale);
     const minsC = Math.round(15 * scale);
@@ -65,31 +65,31 @@ const getSpacedRepetitionChunks = (
     const minsA = Math.round(10 * scale);
     const minsTest = Math.round(60 * scale);
     
-    chunks.push(createChunk(dayNumber, 'D', 'Review', minsD, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsD), getSessName('D', 'Review')));
+    chunks.push(createChunk(dayNumber, 'D', 'Review', minsD, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsD), profile, getSessName('D', 'Review')));
     currentMins += minsD;
-    chunks.push(createChunk(dayNumber, 'C', 'Review', minsC, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsC), getSessName('C', 'Review')));
+    chunks.push(createChunk(dayNumber, 'C', 'Review', minsC, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsC), profile, getSessName('C', 'Review')));
     currentMins += minsC;
-    chunks.push(createChunk(dayNumber, 'B', 'Review', minsB, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsB), getSessName('B', 'Review')));
+    chunks.push(createChunk(dayNumber, 'B', 'Review', minsB, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsB), profile, getSessName('B', 'Review')));
     currentMins += minsB;
-    chunks.push(createChunk(dayNumber, 'A', 'Review', minsA, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsA), getSessName('A', 'Review')));
+    chunks.push(createChunk(dayNumber, 'A', 'Review', minsA, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsA), profile, getSessName('A', 'Review')));
     currentMins += minsA;
-    chunks.push(createChunk(dayNumber, 'A,B,C,D', 'Self Test', minsTest, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsTest), getSessName('A,B,C,D', 'Self Test')));
+    chunks.push(createChunk(dayNumber, 'A,B,C,D', 'Self Test', minsTest, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + minsTest), profile, getSessName('A,B,C,D', 'Self Test')));
   } else if (dayNumber === 7) {
     // Day 7: Strengthening (Light Recall)
     const mins = Math.round(20 * scale);
-    chunks.push(createChunk(dayNumber, 'A,B,C,D', 'Review', mins, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + mins), getSessName('A,B,C,D', 'Review')));
+    chunks.push(createChunk(dayNumber, 'A,B,C,D', 'Review', mins, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + mins), profile, getSessName('A,B,C,D', 'Review')));
   } else if (dayNumber === 10) {
     // Day 10: Deep Encoding (Mixed Recall)
     const mins = Math.round(30 * scale);
-    chunks.push(createChunk(dayNumber, 'C,A,D,B', 'Review', mins, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + mins), getSessName('C,A,D,B', 'Review')));
+    chunks.push(createChunk(dayNumber, 'C,A,D,B', 'Review', mins, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + mins), profile, getSessName('C,A,D,B', 'Review')));
   } else if (dayNumber === 15) {
     // Day 15: Stability (Self Test 2)
     const mins = Math.round(60 * scale);
-    chunks.push(createChunk(dayNumber, 'A,B,C,D', 'Self Test', mins, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + mins), getSessName('A,B,C,D', 'Self Test')));
+    chunks.push(createChunk(dayNumber, 'A,B,C,D', 'Self Test', mins, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + mins), profile, getSessName('A,B,C,D', 'Self Test')));
   } else if (dayNumber === 30) {
     // Day 30: Long-Term (Final Review)
     const mins = Math.round(45 * scale);
-    chunks.push(createChunk(dayNumber, 'A,B,C,D', 'Review', mins, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + mins), getSessName('A,B,C,D', 'Review')));
+    chunks.push(createChunk(dayNumber, 'A,B,C,D', 'Review', mins, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + mins), profile, getSessName('A,B,C,D', 'Review')));
   }
   
   return chunks;
@@ -197,9 +197,11 @@ const createChunk = (
   dayName: string,
   startTime: string = '08:00',
   endTime: string = '11:00',
+  profile: StudyProfile = 'OfficeWorker',
   sessionName: string = 'Session 1'
 ): StudyChunk => {
-  const totalDefaultTime = DEFAULT_TECHNIQUES.reduce((acc, t) => acc + t.time, 0);
+  const techniques = DEFAULT_TECHNIQUES;
+  const totalDefaultTime = techniques.reduce((acc, t) => acc + t.time, 0);
   
   return {
     id: crypto.randomUUID(),
@@ -216,7 +218,7 @@ const createChunk = (
     urlLinks: '',
     notes: '',
     sessionName,
-    blocks: DEFAULT_TECHNIQUES.map((t, idx) => {
+    blocks: techniques.map((t, idx) => {
       const scaledTime = Math.round((t.time / totalDefaultTime) * time);
       const finalTime = time > 0 ? Math.max(1, scaledTime) : 0;
       const blockDate = new Date(date);
