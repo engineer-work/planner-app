@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Zap, 
   Clock, 
@@ -17,13 +17,98 @@ import {
   Search,
   Brain,
   Code,
-  ShieldAlert
+  ShieldAlert,
+  ChevronDown,
+  GraduationCap
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { MasterLearningFrameworkManual } from './MasterLearningFrameworkManual';
 
 export const SimulationPrepManual: React.FC = () => {
+  const [view, setView] = useState<'standard' | 'mlf'>('standard');
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  if (view === 'mlf') {
+    return (
+      <div className="space-y-8">
+        <div className="flex items-center justify-between">
+          <div className="relative">
+            <button 
+              onClick={() => setShowDropdown(!showDropdown)}
+              className="flex items-center gap-3 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-mono uppercase tracking-widest text-[10px] hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
+            >
+              <GraduationCap size={16} />
+              Master Learning Framework
+              <ChevronDown size={14} className={cn("transition-transform", showDropdown && "rotate-180")} />
+            </button>
+            
+            {showDropdown && (
+              <div className="absolute top-full left-0 mt-2 w-64 bg-white border border-zinc-100 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                <button 
+                  onClick={() => { setView('standard'); setShowDropdown(false); }}
+                  className="w-full px-6 py-4 text-left text-[10px] font-mono uppercase tracking-widest text-zinc-500 hover:bg-zinc-50 transition-colors flex items-center gap-3"
+                >
+                  <Brain size={14} />
+                  Standard Simulation
+                </button>
+                <button 
+                  onClick={() => { setView('mlf'); setShowDropdown(false); }}
+                  className="w-full px-6 py-4 text-left text-[10px] font-mono uppercase tracking-widest text-indigo-600 bg-indigo-50 font-bold flex items-center gap-3"
+                >
+                  <GraduationCap size={14} />
+                  Master Framework
+                </button>
+              </div>
+            )}
+          </div>
+          
+          <button 
+            onClick={() => setView('standard')}
+            className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 hover:text-zinc-900 transition-colors"
+          >
+            Back to Standard
+          </button>
+        </div>
+        <MasterLearningFrameworkManual />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-16 pb-12">
+      {/* View Switcher Dropdown */}
+      <div className="flex items-center justify-between">
+        <div className="relative">
+          <button 
+            onClick={() => setShowDropdown(!showDropdown)}
+            className="flex items-center gap-3 px-6 py-3 bg-white border border-zinc-200 text-zinc-900 rounded-2xl font-mono uppercase tracking-widest text-[10px] hover:border-zinc-900 transition-all"
+          >
+            <Brain size={16} className="text-indigo-500" />
+            Standard Simulation
+            <ChevronDown size={14} className={cn("transition-transform", showDropdown && "rotate-180")} />
+          </button>
+          
+          {showDropdown && (
+            <div className="absolute top-full left-0 mt-2 w-64 bg-white border border-zinc-100 rounded-2xl shadow-2xl z-50 overflow-hidden">
+              <button 
+                onClick={() => { setView('standard'); setShowDropdown(false); }}
+                className="w-full px-6 py-4 text-left text-[10px] font-mono uppercase tracking-widest text-indigo-600 bg-indigo-50 font-bold flex items-center gap-3"
+              >
+                <Brain size={14} />
+                Standard Simulation
+              </button>
+              <button 
+                onClick={() => { setView('mlf'); setShowDropdown(false); }}
+                className="w-full px-6 py-4 text-left text-[10px] font-mono uppercase tracking-widest text-zinc-500 hover:bg-zinc-50 transition-colors flex items-center gap-3"
+              >
+                <GraduationCap size={14} />
+                Master Framework
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Hero Section */}
       <header className="space-y-6">
         <div className="inline-flex items-center gap-3 px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-full">

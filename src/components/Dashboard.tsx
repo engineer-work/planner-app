@@ -17,7 +17,7 @@ import {
 } from 'recharts';
 import { StudyCycle, PlannerData } from '../types';
 import { format, parseISO, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
-import { ArrowLeft, TrendingUp, Clock, Target, Calendar, Zap, Activity, CheckCircle2, Layers, BookOpen, BarChart3 } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Clock, Target, Calendar, Zap, Activity, CheckCircle2, Layers, BookOpen, BarChart3, Brain, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -106,6 +106,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ plannerData, onBack }) => 
     const projectedMonthly = avgDailyActual * 30;
     const projectedYearly = avgDailyActual * 365;
 
+    // Spaced Repetition Stats
+    const totalSRItems = (plannerData.spacedRepetitionQueue || []).length;
+    const completedSRItems = (plannerData.spacedRepetitionQueue || []).filter(i => i.status === 'Completed').length;
+    const overdueSRItems = (plannerData.spacedRepetitionQueue || []).filter(i => i.status === 'Overdue' || (i.status === 'Pending' && isBefore(parseISO(i.scheduledDate), startOfDay(new Date())))).length;
+    const retentionRate = totalSRItems > 0 ? (completedSRItems / totalSRItems) * 100 : 0;
+
     // Grading Logic
     const completionScore = (completedBlocks / (totalBlocks || 1)) * 100;
     const recallScore = avgRecall;
@@ -147,6 +153,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ plannerData, onBack }) => 
       avgDailyActual,
       totalCycles: plannerData.cycles.length,
       completedCycles: plannerData.cycles.filter(c => c.completed).length,
+      totalSRItems,
+      completedSRItems,
+      overdueSRItems,
+      retentionRate,
       grade,
       gradeColor,
       gradeDesc
@@ -211,6 +221,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ plannerData, onBack }) => 
           { label: 'Avg Recall', value: stats.avgRecall.toFixed(1), sub: 'Memory Score (0-5)', icon: Zap, color: 'text-indigo-500' },
           { label: 'Active Cycles', value: stats.totalCycles, sub: `${stats.completedCycles} completed`, icon: BookOpen, color: 'text-blue-500' },
           { label: 'Daily Intensity', value: `${Math.round(stats.avgDailyActual)}m`, sub: 'Average per day', icon: Activity, color: 'text-amber-500' },
+          { label: 'Retention Health', value: `${Math.round(stats.retentionRate)}%`, sub: `${stats.completedSRItems}/${stats.totalSRItems} items`, icon: Brain, color: 'text-purple-500' },
         ].map((stat, i) => (
           <motion.div 
             key={i}
@@ -338,6 +349,58 @@ export const Dashboard: React.FC<DashboardProps> = ({ plannerData, onBack }) => 
           </div>
         </div>
       )}
+
+      {/* Retention Intelligence */}
+      <div className="p-10 bg-white border border-zinc-100 rounded-3xl shadow-xl shadow-zinc-100/50">
+        <div className="flex items-center justify-between mb-10">
+          <h3 className="text-xs font-mono uppercase tracking-widest text-zinc-400 flex items-center gap-3">
+            <Brain size={14} className="text-purple-500" /> Retention Intelligence (S++ Spaced Repetition)
+          </h3>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-emerald-500 rounded-full" />
+              <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest">Completed</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-rose-500 rounded-full" />
+              <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest">Overdue</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <div className="p-6 bg-zinc-50 rounded-2xl border border-zinc-100 space-y-4">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-400">Retention Health</div>
+            <div className="text-4xl font-mono font-bold text-zinc-900">{Math.round(stats.retentionRate)}%</div>
+            <div className="h-1 bg-zinc-200 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-purple-500" 
+                style={{ width: `${stats.retentionRate}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="p-6 bg-zinc-50 rounded-2xl border border-zinc-100 space-y-4">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-400">Overdue Items</div>
+            <div className="text-4xl font-mono font-bold text-rose-500">{stats.overdueSRItems}</div>
+            <p className="text-[10px] font-mono opacity-40 uppercase tracking-widest">Requires immediate action</p>
+          </div>
+
+          <div className="md:col-span-2 p-6 bg-zinc-50 rounded-2xl border border-zinc-100">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-400 mb-4">Upcoming Schedule</div>
+            <div className="flex gap-2">
+              {[5, 15, 30, 60, 90].map(day => (
+                <div key={day} className="flex-1 p-3 bg-white rounded-xl border border-zinc-200 text-center space-y-1">
+                  <div className="text-[9px] font-mono font-bold text-zinc-400 uppercase tracking-tighter">D{day}</div>
+                  <div className="text-xs font-bold text-zinc-900">
+                    {(plannerData.spacedRepetitionQueue || []).filter(i => i.level === (day >= 60 ? 'LTM' : `D${day}`)).length}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Projections */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">

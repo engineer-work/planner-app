@@ -48,7 +48,7 @@ export interface StudyDay {
   color: string; // Tailwind color class for the day column
 }
 
-export type StudyProfile = 'OfficeWorker' | 'Intensive' | 'Balanced';
+export type StudyProfile = 'OfficeWorker' | 'Intensive' | 'Balanced' | 'MasteryPath';
 
 export interface StudyCycle {
   id: string;
@@ -68,9 +68,22 @@ export interface StudyCycle {
   createdAt: string;
 }
 
+export interface SpacedRepetitionItem {
+  id: string;
+  topicId: string; // ID of the cycle or topic
+  topicName: string;
+  level: string; // e.g., "D5", "D15", "D30", "LTM"
+  scheduledDate: string; // YYYY-MM-DD
+  completedDate?: string; // YYYY-MM-DD
+  status: 'Pending' | 'Completed' | 'Overdue';
+  recallScore?: number;
+  notes?: string;
+}
+
 export interface PlannerData {
   activeCycleId: string | null;
   cycles: StudyCycle[];
+  spacedRepetitionQueue: SpacedRepetitionItem[];
   timezone: string;
 }
 
@@ -107,6 +120,13 @@ export const PROFILE_CONFIGS: Record<StudyProfile, ProfileConfig> = {
     chunksPerTopic: 5,
     labHours: 3,
     lunchBreakMin: 60,
+  },
+  MasteryPath: {
+    name: 'Mastery Path (MLF)',
+    description: 'A neuro-optimized path through 5 mastery levels (A+ to S+++). Each day focuses on a specific mastery stage for your topic, ensuring permanent retention and identity transformation.',
+    minHoursPerDay: 4,
+    topicsPerDay: 1,
+    chunksPerTopic: 1,
   }
 };
 
@@ -130,7 +150,7 @@ export const DEFAULT_TECHNIQUES = [
   { name: 'Feynman', activity: 'Recall & Explain', time: 20, output: 'Clear explanation' },
 ];
 
-export type TechniqueTemplate = 'SimulationPrep' | 'DocumentPrep';
+export type TechniqueTemplate = 'SimulationPrep' | 'DocumentPrep' | 'MLF_A_Plus' | 'MLF_S' | 'MLF_S_Plus' | 'MLF_S_Double_Plus' | 'MLF_S_Triple_Plus';
 
 export const TECHNIQUE_TEMPLATES: Record<TechniqueTemplate, { name: string, techniques: typeof DEFAULT_TECHNIQUES }> = {
   SimulationPrep: {
@@ -140,5 +160,60 @@ export const TECHNIQUE_TEMPLATES: Record<TechniqueTemplate, { name: string, tech
   DocumentPrep: {
     name: 'Document Preparation',
     techniques: SIMULATION_PREP_TECHNIQUES
+  },
+  MLF_A_Plus: {
+    name: 'MLF: A+ Level (Foundation)',
+    techniques: [
+      { name: 'Big Picture', activity: 'Read/Listen once', time: 10, output: 'Hippocampus Encoding' },
+      { name: 'Summary', activity: 'One-Page Summary (5 Chunks)', time: 15, output: 'PFC Organization' },
+      { name: 'Diagram', activity: 'Visual Flowchart', time: 10, output: 'Dual Coding' },
+      { name: 'Recall', activity: 'Integrated Quiz (MC/SA/TF)', time: 15, output: 'Active Retrieval' },
+      { name: 'Elaboration', activity: 'Reflection Prompts', time: 10, output: 'Retrieval Paths' }
+    ]
+  },
+  MLF_S: {
+    name: 'MLF: S Level (Narrative)',
+    techniques: [
+      { name: 'Narrative', activity: 'Transform to Story', time: 20, output: 'Amygdala Activation' },
+      { name: 'Emotional Tag', activity: 'Add Emotion to Diagram', time: 10, output: 'Synaptic Strength' },
+      { name: 'Connection', activity: 'Personal Relevance', time: 15, output: 'DMN Activation' },
+      { name: 'Scenarios', activity: 'Real-life Scenario Quiz', time: 15, output: 'Stakes Engagement' },
+      { name: 'Identity', activity: 'Identity Reflection', time: 10, output: 'Self-Integration' }
+    ]
+  },
+  MLF_S_Plus: {
+    name: 'MLF: S+ Level (Social)',
+    techniques: [
+      { name: 'Personas', activity: 'Create 3 AI Personas', time: 15, output: 'Theory of Mind' },
+      { name: 'Teach Summary', activity: 'Teach Summary to Personas', time: 15, output: 'Mirror Neurons' },
+      { name: 'Teach Diagram', activity: 'Teach Diagram to Personas', time: 15, output: 'Dual Pathways' },
+      { name: 'Teach Guide', activity: 'Teach Guide to Personas', time: 15, output: 'Error Detection' },
+      { name: 'Teach Quiz', activity: 'Teach Quiz to Personas', time: 15, output: 'Retrieval Reinforcement' },
+      { name: 'Teach Reflect', activity: 'Teach Reflection to Personas', time: 15, output: 'Metacognition' },
+      { name: 'Perspective', activity: 'Role-Play Reversal', time: 15, output: 'Neural Flexibility' }
+    ]
+  },
+  MLF_S_Double_Plus: {
+    name: 'MLF: S++ Level (Spaced)',
+    techniques: [
+      { name: 'Planning', activity: 'Create Spacing Schedule', time: 10, output: 'PFC Planning' },
+      { name: 'D3 Review', activity: 'Day 3 Summary Recall', time: 10, output: 'LTP Strength' },
+      { name: 'D7 Review', activity: 'Day 7 Diagram Recall', time: 10, output: 'Spaced Recall' },
+      { name: 'D14 Review', activity: 'Day 14 Guide Recall', time: 15, output: 'Neocortical Transfer' },
+      { name: 'D30 Review', activity: 'Day 30 Quiz Recall', time: 20, output: 'Myelination' },
+      { name: 'D60 Review', activity: 'Day 60 Reflection Recall', time: 20, output: 'Automaticity' },
+      { name: 'D90 Review', activity: 'Day 90 Combined Recall', time: 30, output: 'Permanent Storage' }
+    ]
+  },
+  MLF_S_Triple_Plus: {
+    name: 'MLF: S+++ Level (Identity)',
+    techniques: [
+      { name: 'Invitation', activity: 'Identity Statement', time: 30, output: 'Self-Concept' },
+      { name: 'Immersion', activity: 'Scenario Living (4 Weeks)', time: 60, output: 'Experiential' },
+      { name: 'Discovery', activity: 'Build Own Tools', time: 60, output: 'Creation Pathways' },
+      { name: 'Collaboration', activity: 'AI Problem Solving', time: 60, output: 'Integration' },
+      { name: 'Creation', activity: 'Create New Asset', time: 120, output: 'Novel Pathways' },
+      { name: 'Legacy', activity: 'Build Scaling System', time: 120, output: 'Reinforcement' }
+    ]
   }
 };

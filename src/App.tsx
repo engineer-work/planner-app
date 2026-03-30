@@ -10,11 +10,14 @@ import {
   Clock, 
   BarChart3, 
   Settings,
+  Settings2,
+  Scale,
   Plus,
   Trash2,
   FileJson,
   FileSpreadsheet,
   ArrowLeft,
+  ArrowRight,
   Globe,
   Play,
   Square,
@@ -29,7 +32,8 @@ import {
   Activity,
   Github,
   Sparkles,
-  Cpu
+  Cpu,
+  ShieldAlert
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, parseISO, isValid, differenceInMinutes, addMinutes, startOfDay, addDays } from 'date-fns';
@@ -56,6 +60,8 @@ import { RatioFrameworkManual } from './components/RatioFrameworkManual';
 import { PersonalRoadmapManual } from './components/PersonalRoadmapManual';
 import { MilestoneTrackerManual } from './components/MilestoneTrackerManual';
 import { DigitalTrackerManual } from './components/DigitalTrackerManual';
+import { MasterLearningFramework } from './components/MasterLearningFramework';
+import { SpacedRepetitionView } from './components/SpacedRepetitionView';
 
 const TIMEZONES = [
   'Asia/Kolkata',
@@ -71,10 +77,10 @@ const TIMEZONES = [
 export default function App() {
   const [data, setData] = useState<PlannerData | null>(null);
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
-  const [view, setView] = useState<'setup' | 'overview' | 'detail' | 'dashboard'>('setup');
+  const [view, setView] = useState<'setup' | 'overview' | 'detail' | 'dashboard' | 'mastery' | 'spaced_repetition'>('setup');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showManual, setShowManual] = useState(false);
-  const [manualTab, setManualTab] = useState<'general' | 'docprep' | 'simulation' | 'asi' | 'ratio' | 'personal' | 'tracker' | 'digital'>('general');
+  const [manualTab, setManualTab] = useState<'general' | 'docprep' | 'simulation' | 'asi' | 'ratio' | 'personal' | 'tracker' | 'digital' | 'mlf'>('general');
 
   // Setup state
   const [setupProfile, setSetupProfile] = useState<StudyProfile>('OfficeWorker');
@@ -89,6 +95,26 @@ export default function App() {
   const [setupSourceType, setSetupSourceType] = useState<StudyCycle['sourceType']>('Book');
   const [setupStartDate, setSetupStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [modal, setModal] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    type: 'alert' | 'confirm';
+    onConfirm?: () => void;
+  }>({
+    show: false,
+    title: '',
+    message: '',
+    type: 'alert'
+  });
+
+  const showAlert = (title: string, message: string) => {
+    setModal({ show: true, title, message, type: 'alert' });
+  };
+
+  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setModal({ show: true, title, message, type: 'confirm', onConfirm });
+  };
 
   const activeCycle = useMemo(() => {
     if (!data || !data.activeCycleId) return null;
@@ -124,7 +150,8 @@ export default function App() {
           const newStore: PlannerData = {
             activeCycleId: initialCycle.id,
             cycles: [initialCycle],
-            timezone: parsed.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'
+            timezone: parsed.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+            spacedRepetitionQueue: parsed.spacedRepetitionQueue || []
           };
           setData(newStore);
           setView('overview');
@@ -149,6 +176,22 @@ export default function App() {
       localStorage.setItem('planner_app_v1_data', JSON.stringify(data));
     }
   }, [data]);
+
+  useEffect(() => {
+    console.log("App Version: v2.6.1-MLF - Master Learning Framework Integrated");
+  }, []);
+
+  const handleReset = () => {
+    showConfirm(
+      'Reset Application',
+      'Are you sure you want to reset the application? This will clear all your study data and progress.',
+      () => {
+        localStorage.clear();
+        sessionStorage.clear();
+        window.location.href = window.location.origin + '?v=' + Date.now();
+      }
+    );
+  };
 
   const handleStart = () => {
     const newCycle = createInitialCycle(
@@ -252,6 +295,99 @@ export default function App() {
       c.id === data.activeCycleId ? { ...c, days: newDays } : c
     );
     setData({ ...data, cycles: newCycles });
+  };
+
+  const applyTemplateToActiveCycle = (template: TechniqueTemplate) => {
+    if (!activeCycle || !data) return;
+    
+    const templateConfig = TECHNIQUE_TEMPLATES[template];
+    if (!templateConfig) return;
+
+    const newDays = activeCycle.days.map(day => ({
+      ...day,
+      chunks: day.chunks.map(chunk => {
+        const newBlocks: StudyBlock[] = templateConfig.techniques.map((t, idx) => {
+          const startTime = addMinutes(parseISO(`${chunk.date}T${chunk.startTime}`), templateConfig.techniques.slice(0, idx).reduce((acc, curr) => acc + curr.time, 0));
+          const endTime = addMinutes(startTime, t.time);
+          
+          return {
+            id: crypto.randomUUID(),
+            blockNumber: idx + 1,
+            technique: t.name,
+            activity: t.activity,
+            plannedMin: t.time,
+            startTime: startTime.toISOString(),
+            endTime: endTime.toISOString(),
+            actualMin: 0,
+            diffMin: 0,
+            gapMin: 0,
+            gapReason: '',
+            diffReason: '',
+            outputRequired: t.output,
+            done: false,
+            urls: []
+          };
+        });
+
+        return {
+          ...chunk,
+          blocks: newBlocks,
+          techniqueTemplate: template,
+          plannedMin: templateConfig.techniques.reduce((acc, t) => acc + t.time, 0)
+        };
+      })
+    }));
+
+    setData({
+      ...data,
+      cycles: data.cycles.map(c => c.id === activeCycle.id ? { ...c, days: newDays } : c)
+    });
+
+    // If S++ template, generate spaced repetition queue items
+    if (template === 'MLF_S_Double_Plus') {
+      const intervals = [5, 15, 30, 60, 90]; // Days from now
+      const newItems: any[] = intervals.map(days => {
+        const scheduledDate = addDays(new Date(), days);
+        return {
+          id: crypto.randomUUID(),
+          topicId: activeCycle.id,
+          topicName: activeCycle.topic,
+          level: days >= 60 ? 'LTM' : `D${days}`,
+          scheduledDate: format(scheduledDate, 'yyyy-MM-dd'),
+          status: 'Pending'
+        };
+      });
+
+      setData(prev => {
+        if (!prev) return prev;
+        // Filter out existing items for this topic to avoid duplicates
+        const filteredQueue = prev.spacedRepetitionQueue.filter(item => item.topicId !== activeCycle.id);
+        return {
+          ...prev,
+          spacedRepetitionQueue: [...filteredQueue, ...newItems]
+        };
+      });
+      
+      showAlert('S++ Architecture Applied', `Spaced repetition schedule (D5, D15, D30, D60, D90) has been generated. You can track these in the "Retention" tab.`);
+    } else {
+      showAlert('Template Applied', `${templateConfig.name} has been applied to all modules in the current cycle.`);
+    }
+  };
+
+  const toggleSpacedRepetitionItem = (itemId: string) => {
+    if (!data) return;
+    const newQueue = data.spacedRepetitionQueue.map(item => {
+      if (item.id === itemId) {
+        const isCompleting = item.status !== 'Completed';
+        return {
+          ...item,
+          status: (isCompleting ? 'Completed' : 'Pending') as any,
+          completedDate: isCompleting ? format(new Date(), 'yyyy-MM-dd') : undefined
+        };
+      }
+      return item;
+    });
+    setData({ ...data, spacedRepetitionQueue: newQueue });
   };
 
   const updateBlock = (chunkId: string, blockId: string, updates: Partial<StudyBlock>) => {
@@ -419,13 +555,14 @@ export default function App() {
           const newStore: PlannerData = {
             activeCycleId: initialCycle.id,
             cycles: [initialCycle],
-            timezone: parsed.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'
+            timezone: parsed.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+            spacedRepetitionQueue: parsed.spacedRepetitionQueue || []
           };
           setData(newStore);
           setView('overview');
         }
       } catch (err) {
-        alert('Invalid JSON file');
+        showAlert('Import Error', 'Invalid JSON file structure.');
       }
     };
     reader.readAsText(file);
@@ -483,11 +620,12 @@ export default function App() {
         if (parsed && Array.isArray(parsed.cycles)) {
           setData(parsed);
           setView('overview');
+          showAlert('Import Success', 'Planner data has been restored successfully.');
         } else {
-          alert('Invalid Planner Data format');
+          showAlert('Import Error', 'Invalid Planner Data format. Please check your JSON file.');
         }
       } catch (err) {
-        alert('Error parsing JSON');
+        showAlert('Import Error', 'Error parsing JSON file.');
       }
     };
     reader.readAsText(file);
@@ -505,9 +643,9 @@ export default function App() {
         
         // This is a simplified CSV import that only works if the format matches exactly
         // In a real app, we'd need a more robust parser.
-        alert('CSV Import is for data analysis. For full restoration, please use JSON Import.');
+        showAlert('CSV Notice', 'CSV Import is for data analysis. For full restoration, please use JSON Import.');
       } catch (err) {
-        alert('Error parsing CSV');
+        showAlert('Import Error', 'Error parsing CSV file.');
       }
     };
     reader.readAsText(file);
@@ -603,28 +741,33 @@ export default function App() {
             className="min-h-screen flex flex-col items-center justify-center p-6 bg-white"
           >
             <div className="max-w-5xl w-full space-y-16">
-              <div className="text-center space-y-6">
+              <div className="text-center space-y-8">
                 <motion.div 
                   initial={{ y: 20, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
-                  className="inline-flex items-center gap-3 px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-full mb-4"
+                  className="inline-flex items-center gap-3 px-5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-full mb-4 shadow-sm"
                 >
-                  <Zap size={14} className="text-emerald-500" />
-                  <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-zinc-500">v2.5 Professional Edition</span>
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-zinc-600 font-bold">v2.6 Professional Edition</span>
                 </motion.div>
-                <h1 className="text-8xl font-display font-bold tracking-tighter text-zinc-900 leading-none">Planner App</h1>
-                <p className="text-sm font-mono uppercase tracking-[0.5em] text-zinc-400">Architecting Knowledge with Precision</p>
+                <h1 className="text-9xl font-display font-black tracking-tighter text-zinc-900 leading-[0.85] drop-shadow-sm">
+                  Planner<br />App
+                </h1>
+                <div className="flex flex-col items-center gap-6">
+                  <p className="text-sm font-mono uppercase tracking-[0.6em] text-zinc-400 font-medium">Architecting Knowledge with Precision</p>
+                  <div className="h-px w-24 bg-zinc-200" />
+                </div>
                 
-                <div className="flex items-center justify-center gap-4 pt-4">
-                  <label className="flex items-center gap-2 px-6 py-3 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-2xl cursor-pointer transition-all group">
-                    <Upload size={16} className="text-zinc-400 group-hover:text-zinc-900" />
-                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-500 group-hover:text-zinc-900">Restore from Backup</span>
+                <div className="flex items-center justify-center gap-4 pt-6">
+                  <label className="flex items-center gap-3 px-8 py-4 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-2xl cursor-pointer transition-all group shadow-sm hover:shadow-md">
+                    <Upload size={18} className="text-zinc-400 group-hover:text-zinc-900 transition-colors" />
+                    <span className="text-[11px] font-mono font-bold uppercase tracking-widest text-zinc-500 group-hover:text-zinc-900">Restore from Backup</span>
                     <input type="file" accept=".json" onChange={handleImportJson} className="hidden" />
                   </label>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {(Object.keys(PROFILE_CONFIGS) as StudyProfile[]).map((p, idx) => (
                   <motion.button
                     key={p}
@@ -633,26 +776,44 @@ export default function App() {
                     transition={{ delay: idx * 0.1 }}
                     onClick={() => setSetupProfile(p)}
                     className={cn(
-                      "p-10 border text-left transition-all duration-500 flex flex-col justify-between group relative h-full rounded-2xl",
+                      "p-8 border text-left transition-all duration-500 flex flex-col justify-between group relative h-full rounded-[2rem]",
                       setupProfile === p 
-                        ? "border-zinc-900 bg-zinc-900 text-white shadow-2xl scale-[1.02]" 
-                        : "border-zinc-100 bg-zinc-50 hover:border-zinc-300 hover:bg-white"
+                        ? "border-zinc-900 bg-zinc-900 text-white shadow-2xl scale-[1.05] z-10" 
+                        : "border-zinc-100 bg-zinc-50/50 hover:border-zinc-300 hover:bg-white hover:shadow-xl"
                     )}
                   >
                     <div className="space-y-6">
                       <div className="flex items-center justify-between">
-                        <h3 className="font-display font-bold text-3xl tracking-tight">{PROFILE_CONFIGS[p].name}</h3>
-                        {setupProfile === p && <CheckCircle2 size={24} className="text-emerald-400" />}
+                        <div className={cn(
+                          "w-12 h-12 rounded-2xl flex items-center justify-center transition-colors",
+                          setupProfile === p ? "bg-white/10" : "bg-white shadow-sm"
+                        )}>
+                          {p === 'OfficeWorker' && <Clock size={20} className={setupProfile === p ? "text-white" : "text-zinc-400"} />}
+                          {p === 'Intensive' && <Zap size={20} className={setupProfile === p ? "text-white" : "text-zinc-400"} />}
+                          {p === 'Balanced' && <Scale size={20} className={setupProfile === p ? "text-white" : "text-zinc-400"} />}
+                          {p === 'MasteryPath' && <Sparkles size={20} className={setupProfile === p ? "text-white" : "text-zinc-400"} />}
+                        </div>
+                        {setupProfile === p && (
+                          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}>
+                            <CheckCircle2 size={24} className="text-emerald-400" />
+                          </motion.div>
+                        )}
                       </div>
-                      <p className="text-sm opacity-70 leading-relaxed font-medium">
-                        {PROFILE_CONFIGS[p].description}
-                      </p>
+                      <div>
+                        <h3 className="font-display font-bold text-2xl tracking-tight mb-3">{PROFILE_CONFIGS[p].name}</h3>
+                        <p className="text-xs opacity-70 leading-relaxed font-medium line-clamp-4">
+                          {PROFILE_CONFIGS[p].description}
+                        </p>
+                      </div>
                     </div>
                     
-                    <div className="mt-12 pt-8 border-t border-current/10">
-                      <div className="flex justify-between items-center text-xs font-mono uppercase tracking-widest">
-                        <span className="opacity-50">Daily Intensity</span>
-                        <span className="font-bold text-lg">{PROFILE_CONFIGS[p].minHoursPerDay}h</span>
+                    <div className="mt-8 pt-6 border-t border-current/10">
+                      <div className="flex justify-between items-end">
+                        <div className="space-y-1">
+                          <span className="text-[9px] font-mono uppercase tracking-widest opacity-50 block">Intensity</span>
+                          <span className="font-display font-bold text-2xl tracking-tighter">{PROFILE_CONFIGS[p].minHoursPerDay}h</span>
+                        </div>
+                        <div className="text-[9px] font-mono uppercase tracking-widest opacity-50">Daily</div>
                       </div>
                     </div>
                   </motion.button>
@@ -663,102 +824,112 @@ export default function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4 }}
-                className="bg-zinc-50 border border-zinc-200 p-12 rounded-3xl space-y-10 shadow-sm"
+                className="bg-white border border-zinc-100 p-12 rounded-[3rem] space-y-12 shadow-2xl shadow-zinc-200/50"
               >
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-12 gap-y-10">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">Primary Subject</label>
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-10 h-10 bg-zinc-900 rounded-xl flex items-center justify-center text-white">
+                    <Settings2 size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-display font-bold tracking-tight">Configuration</h2>
+                    <p className="text-xs text-zinc-400 font-mono uppercase tracking-widest">Define your learning parameters</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-16 gap-y-12">
+                  <div className="space-y-4 group">
+                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 group-focus-within:text-zinc-900 transition-colors">Primary Subject</label>
                     <input 
                       type="text" 
                       value={setupSubject}
                       onChange={(e) => setSetupSubject(e.target.value)}
-                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-display font-bold text-3xl focus:border-zinc-900 transition-colors tracking-tight"
-                      placeholder="e.g. Mathematics"
+                      className="w-full bg-transparent border-b-2 border-zinc-100 py-4 outline-none font-display font-bold text-4xl focus:border-zinc-900 transition-all tracking-tighter placeholder:text-zinc-100"
+                      placeholder="Mathematics"
                     />
                   </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">Core Topic</label>
+                  <div className="space-y-4 group">
+                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 group-focus-within:text-zinc-900 transition-colors">Core Topic</label>
                     <input 
                       type="text" 
                       value={setupTopic}
                       onChange={(e) => setSetupTopic(e.target.value)}
-                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-display font-bold text-3xl focus:border-zinc-900 transition-colors tracking-tight"
-                      placeholder="e.g. Probability"
+                      className="w-full bg-transparent border-b-2 border-zinc-100 py-4 outline-none font-display font-bold text-4xl focus:border-zinc-900 transition-all tracking-tighter placeholder:text-zinc-100"
+                      placeholder="Probability"
                     />
                   </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">Start Date</label>
+                  <div className="space-y-4 group">
+                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 group-focus-within:text-zinc-900 transition-colors">Start Date</label>
                     <input 
                       type="date" 
                       value={setupStartDate}
                       onChange={(e) => setSetupStartDate(e.target.value)}
-                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-display font-bold text-3xl focus:border-zinc-900 transition-colors tracking-tight"
+                      className="w-full bg-transparent border-b-2 border-zinc-100 py-4 outline-none font-display font-bold text-4xl focus:border-zinc-900 transition-all tracking-tighter"
                     />
                   </div>
 
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">Unit</label>
+                  <div className="space-y-4 group">
+                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 group-focus-within:text-zinc-900 transition-colors">Unit</label>
                     <input 
                       type="text" 
                       value={setupUnit}
                       onChange={(e) => setSetupUnit(e.target.value)}
-                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-display font-bold text-3xl focus:border-zinc-900 transition-colors tracking-tight"
-                      placeholder="e.g. Unit 1"
+                      className="w-full bg-transparent border-b-2 border-zinc-100 py-4 outline-none font-display font-bold text-4xl focus:border-zinc-900 transition-all tracking-tighter placeholder:text-zinc-100"
+                      placeholder="Unit 1"
                     />
                   </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">Part</label>
+                  <div className="space-y-4 group">
+                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 group-focus-within:text-zinc-900 transition-colors">Part</label>
                     <input 
                       type="text" 
                       value={setupPart}
                       onChange={(e) => setSetupPart(e.target.value)}
-                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-display font-bold text-3xl focus:border-zinc-900 transition-colors tracking-tight"
-                      placeholder="e.g. Part A"
+                      className="w-full bg-transparent border-b-2 border-zinc-100 py-4 outline-none font-display font-bold text-4xl focus:border-zinc-900 transition-all tracking-tighter placeholder:text-zinc-100"
+                      placeholder="Part A"
                     />
                   </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">Lesson</label>
+                  <div className="space-y-4 group">
+                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 group-focus-within:text-zinc-900 transition-colors">Lesson</label>
                     <input 
                       type="text" 
                       value={setupLesson}
                       onChange={(e) => setSetupLesson(e.target.value)}
-                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-serif italic text-3xl focus:border-zinc-900 transition-colors"
-                      placeholder="e.g. Lesson 4"
+                      className="w-full bg-transparent border-b-2 border-zinc-100 py-4 outline-none font-serif italic text-4xl focus:border-zinc-900 transition-all placeholder:text-zinc-100"
+                      placeholder="Lesson 4"
                     />
                   </div>
 
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">Chapter</label>
+                  <div className="space-y-4 group">
+                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 group-focus-within:text-zinc-900 transition-colors">Chapter</label>
                     <input 
                       type="text" 
                       value={setupChapter}
                       onChange={(e) => setSetupChapter(e.target.value)}
-                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-serif italic text-3xl focus:border-zinc-900 transition-colors"
-                      placeholder="e.g. Chapter 2"
+                      className="w-full bg-transparent border-b-2 border-zinc-100 py-4 outline-none font-serif italic text-4xl focus:border-zinc-900 transition-all placeholder:text-zinc-100"
+                      placeholder="Chapter 2"
                     />
                   </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">Session</label>
+                  <div className="space-y-4 group">
+                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 group-focus-within:text-zinc-900 transition-colors">Session</label>
                     <input 
                       type="text" 
                       value={setupSession}
                       onChange={(e) => setSetupSession(e.target.value)}
-                      className="w-full bg-transparent border-b border-zinc-300 py-3 outline-none font-serif italic text-3xl focus:border-zinc-900 transition-colors"
-                      placeholder="e.g. Session 1"
+                      className="w-full bg-transparent border-b-2 border-zinc-100 py-4 outline-none font-serif italic text-4xl focus:border-zinc-900 transition-all placeholder:text-zinc-100"
+                      placeholder="Session 1"
                     />
                   </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">Source Type</label>
-                    <div className="flex flex-wrap gap-2 pt-2">
+                  <div className="space-y-4 group">
+                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 block mb-2">Source Type</label>
+                    <div className="flex flex-wrap gap-3 pt-2">
                       {['Article', 'Book', 'Video', 'Image', 'Audio'].map(type => (
                         <button
                           key={type}
                           onClick={() => setSetupSourceType(type as any)}
                           className={cn(
-                            "px-3 py-1.5 rounded-full text-[10px] font-mono uppercase tracking-wider border transition-all",
+                            "px-5 py-2.5 rounded-xl text-[10px] font-mono uppercase tracking-widest border-2 transition-all",
                             setupSourceType === type 
-                              ? "bg-zinc-900 text-white border-zinc-900" 
-                              : "bg-white text-zinc-500 border-zinc-200 hover:border-zinc-400"
+                              ? "bg-zinc-900 text-white border-zinc-900 shadow-lg" 
+                              : "bg-white text-zinc-400 border-zinc-100 hover:border-zinc-300 hover:text-zinc-600"
                           )}
                         >
                           {type}
@@ -768,33 +939,46 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="space-y-6">
-                  <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 block">Plan Duration (Days)</label>
+                <div className="space-y-8 pt-6">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 block">Plan Duration (Days)</label>
+                    <span className="text-xs font-mono text-zinc-400 italic">Long-term memory optimization recommended</span>
+                  </div>
                   <div className="flex gap-6">
                     {[5, 15, 30].map(d => (
                       <button
                         key={d}
                         onClick={() => setSetupDays(d)}
                         className={cn(
-                          "flex-1 py-4 border-2 font-mono text-sm transition-all rounded-xl",
+                          "flex-1 py-6 border-2 font-mono text-sm transition-all rounded-2xl flex flex-col items-center gap-2",
                           setupDays === d 
-                            ? "bg-zinc-900 text-white border-zinc-900 shadow-lg scale-105" 
-                            : "bg-white border-zinc-100 hover:border-zinc-300"
+                            ? "bg-zinc-900 text-white border-zinc-900 shadow-2xl scale-[1.02]" 
+                            : "bg-white border-zinc-100 hover:border-zinc-300 text-zinc-400"
                         )}
                       >
-                        {d} Days {d === 30 && "(LTM Optimized)"}
+                        <span className="text-2xl font-display font-bold tracking-tighter">{d}</span>
+                        <span className="text-[9px] uppercase tracking-widest font-bold">Days {d === 30 && "• LTM"}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <button
-                  onClick={handleStart}
-                  className="w-full bg-zinc-900 text-white py-6 rounded-2xl font-mono uppercase tracking-[0.6em] hover:bg-zinc-800 transition-all flex items-center justify-center gap-6 group shadow-xl"
-                >
-                  Initialize Learning Engine
-                  <ChevronRight size={24} className="group-hover:translate-x-2 transition-transform" />
-                </button>
+                <div className="flex flex-col lg:flex-row gap-6 pt-8">
+                  <button
+                    onClick={handleStart}
+                    className="flex-[2] bg-zinc-900 text-white py-8 rounded-3xl font-mono uppercase tracking-[0.8em] text-sm hover:bg-zinc-800 transition-all flex items-center justify-center gap-8 group shadow-2xl shadow-zinc-300"
+                  >
+                    Initialize Learning Engine
+                    <ChevronRight size={28} className="group-hover:translate-x-3 transition-transform" />
+                  </button>
+                  <button
+                    onClick={() => { setShowManual(true); setManualTab('mlf'); }}
+                    className="flex-1 bg-indigo-600 text-white px-10 py-8 rounded-3xl font-mono uppercase tracking-widest text-[11px] hover:bg-indigo-700 transition-all flex items-center justify-center gap-4 shadow-2xl shadow-indigo-200 group"
+                  >
+                    <Sparkles size={22} className="group-hover:scale-125 transition-transform duration-500" />
+                    Master Framework
+                  </button>
+                </div>
 
                 {/* Developer & Platform Info */}
                 <footer className="mt-24 pt-12 border-t border-zinc-100 w-full flex flex-col md:flex-row items-center justify-between gap-12">
@@ -829,9 +1013,16 @@ export default function App() {
                   <div className="flex flex-col md:items-end gap-3">
                     <span className="text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-400">I used Google AI Studio and Gemini to make this app</span>
                     <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => window.location.reload()}
+                        className="flex items-center gap-2 px-4 py-2 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-2xl transition-all group"
+                      >
+                        <RefreshCw size={12} className="text-zinc-400 group-hover:rotate-180 transition-transform duration-700" />
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-500">Refresh App</span>
+                      </button>
                       <div className="flex items-center gap-3 px-4 py-2 bg-zinc-50 rounded-2xl border border-zinc-100 shadow-sm">
                         <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-600">Google AI Studio</span>
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-600">v2.6.1-MLF</span>
                       </div>
                       <div className="flex items-center gap-3 px-4 py-2 bg-zinc-900 text-white rounded-2xl shadow-xl">
                         <Sparkles size={14} className="text-indigo-400" />
@@ -925,49 +1116,81 @@ export default function App() {
 
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2 border-r border-zinc-200 pr-4 mr-2">
-                  <div className="relative group/export">
+                  <div className="relative group/system">
                     <button className="p-3 bg-zinc-100 text-zinc-500 hover:text-zinc-900 rounded-xl transition-all flex items-center gap-2">
-                      <Download size={18} />
-                      <span className="text-[10px] font-mono font-bold uppercase tracking-widest hidden md:block">Export</span>
+                      <Settings size={18} />
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-widest hidden md:block">System</span>
                     </button>
-                    <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-zinc-200 rounded-2xl shadow-2xl opacity-0 invisible group-hover/export:opacity-100 group-hover/export:visible transition-all z-[60] overflow-hidden">
+                    <div className="absolute top-full right-0 mt-2 w-56 bg-white border border-zinc-200 rounded-2xl shadow-2xl opacity-0 invisible group-hover/system:opacity-100 group-hover/system:visible transition-all z-[60] overflow-hidden">
+                      <div className="p-2 border-b border-zinc-100 bg-zinc-50/50">
+                        <p className="text-[9px] font-mono font-bold text-zinc-400 uppercase tracking-widest px-2">Data Management</p>
+                      </div>
                       <button onClick={exportToJson} className="w-full px-4 py-3 text-left text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-zinc-50 flex items-center gap-3">
-                        <FileJson size={14} className="text-amber-500" /> JSON Backup
+                        <FileJson size={14} className="text-amber-500" /> Export JSON
                       </button>
                       <button onClick={exportToCsv} className="w-full px-4 py-3 text-left text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-zinc-50 flex items-center gap-3">
-                        <FileSpreadsheet size={14} className="text-emerald-500" /> CSV Analysis
+                        <FileSpreadsheet size={14} className="text-emerald-500" /> Export CSV
                       </button>
-                    </div>
-                  </div>
-
-                  <div className="relative group/import">
-                    <button className="p-3 bg-zinc-100 text-zinc-500 hover:text-zinc-900 rounded-xl transition-all flex items-center gap-2">
-                      <Upload size={18} />
-                      <span className="text-[10px] font-mono font-bold uppercase tracking-widest hidden md:block">Import</span>
-                    </button>
-                    <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-zinc-200 rounded-2xl shadow-2xl opacity-0 invisible group-hover/import:opacity-100 group-hover/import:visible transition-all z-[60] overflow-hidden">
-                      <label className="w-full px-4 py-3 text-left text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-zinc-50 flex items-center gap-3 cursor-pointer">
-                        <FileJson size={14} className="text-amber-500" /> JSON Restore
+                      <label className="w-full px-4 py-3 text-left text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-zinc-50 flex items-center gap-3 cursor-pointer border-t border-zinc-100">
+                        <Upload size={14} className="text-blue-500" /> Import JSON
                         <input type="file" accept=".json" onChange={handleImportJson} className="hidden" />
                       </label>
-                      <label className="w-full px-4 py-3 text-left text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-zinc-50 flex items-center gap-3 cursor-pointer">
-                        <FileSpreadsheet size={14} className="text-emerald-500" /> CSV Import
-                        <input type="file" accept=".csv" onChange={handleImportCsv} className="hidden" />
-                      </label>
+                      
+                      <div className="p-2 border-t border-b border-zinc-100 bg-zinc-50/50">
+                        <p className="text-[9px] font-mono font-bold text-zinc-400 uppercase tracking-widest px-2">Maintenance</p>
+                      </div>
+                      <button 
+                        onClick={() => { 
+                          localStorage.clear(); 
+                          sessionStorage.clear(); 
+                          showAlert('Success', 'Cache cleared! Your local data has been reset.');
+                        }}
+                        className="w-full px-4 py-3 text-left text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-zinc-50 flex items-center gap-3 text-zinc-600"
+                      >
+                        <Trash2 size={14} /> Clear Cache
+                      </button>
+                      <button 
+                        onClick={handleReset}
+                        className="w-full px-4 py-3 text-left text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-red-50 flex items-center gap-3 text-red-500"
+                      >
+                        <RefreshCw size={14} /> Factory Reset
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                <button 
-                  onClick={() => setView('dashboard')}
-                  className={cn(
-                    "p-3 rounded-xl transition-all flex items-center gap-2 group",
-                    view === 'dashboard' ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500 hover:text-zinc-900"
-                  )}
-                >
-                  <BarChart3 size={18} />
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-widest hidden md:block">Dashboard</span>
-                </button>
+                <div className="flex items-center gap-2 bg-zinc-100 p-1 rounded-xl">
+                  <button 
+                    onClick={() => setView('overview')}
+                    className={cn(
+                      "px-4 py-2 rounded-lg transition-all flex items-center gap-2",
+                      view === 'overview' ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+                    )}
+                  >
+                    <Layout size={16} />
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest hidden lg:block">Grid</span>
+                  </button>
+                  <button 
+                    onClick={() => setView('mastery')}
+                    className={cn(
+                      "px-4 py-2 rounded-lg transition-all flex items-center gap-2",
+                      view === 'mastery' ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+                    )}
+                  >
+                    <Target size={16} />
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest hidden lg:block">Roadmap</span>
+                  </button>
+                  <button 
+                    onClick={() => setView('dashboard')}
+                    className={cn(
+                      "px-4 py-2 rounded-lg transition-all flex items-center gap-2",
+                      view === 'dashboard' ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+                    )}
+                  >
+                    <BarChart3 size={16} />
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest hidden lg:block">Insights</span>
+                  </button>
+                </div>
 
                 <button 
                   onClick={() => setShowManual(true)}
@@ -977,6 +1200,7 @@ export default function App() {
                   <BookOpen size={18} className="group-hover:scale-110 transition-transform" />
                   <span className="text-[10px] font-mono uppercase font-bold hidden sm:inline">Manual</span>
                 </button>
+
                 <div className="flex items-center gap-3 bg-zinc-50 px-4 py-2 border border-zinc-200 rounded-xl">
                   <Globe size={14} className="text-zinc-400" />
                   <select 
@@ -990,23 +1214,9 @@ export default function App() {
                   </select>
                 </div>
                 
-                <div className="h-10 w-px bg-zinc-200 mx-2" />
-                
-                <div className="flex items-center gap-2">
-                  <button onClick={exportJSON} className="p-3 hover:bg-zinc-100 rounded-xl transition-all text-zinc-600 hover:text-zinc-900" title="Export JSON">
-                    <FileJson size={20} />
-                  </button>
-                  <button onClick={exportCSV} className="p-3 hover:bg-zinc-100 rounded-xl transition-all text-zinc-600 hover:text-zinc-900" title="Export CSV">
-                    <FileSpreadsheet size={20} />
-                  </button>
-                  <label className="p-3 hover:bg-zinc-100 rounded-xl transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer">
-                    <Upload size={20} />
-                    <input type="file" className="hidden" onChange={handleImport} accept=".json" />
-                  </label>
-                  <button onClick={() => setView('setup')} className="p-3 hover:bg-zinc-100 rounded-xl transition-all text-zinc-600 hover:text-zinc-900">
-                    <Settings size={20} />
-                  </button>
-                </div>
+                <button onClick={() => setView('setup')} className="p-3 bg-zinc-100 text-zinc-500 hover:text-zinc-900 rounded-xl transition-all">
+                  <Plus size={20} />
+                </button>
               </div>
             </header>
 
@@ -1087,39 +1297,55 @@ export default function App() {
                           <BarChart3 size={16} className="group-hover:scale-110 transition-transform" /> 
                           Performance Intelligence
                         </button>
-                      </div>
-
-                      <div className="bg-white border border-zinc-100 shadow-xl shadow-zinc-100/50 rounded-3xl overflow-hidden">
+                      </div>                      <div className="bg-white border border-zinc-200 shadow-2xl shadow-zinc-200/50 rounded-[2rem] overflow-hidden">
                         <div className="overflow-x-auto">
                           <table className="w-full border-collapse text-left min-w-[1400px]">
                             <thead>
-                              <tr className="bg-zinc-50/50 border-b border-zinc-200 text-[10px] font-mono uppercase tracking-[0.2em] text-zinc-400">
-                                <th className="p-6 w-20 text-center border-r border-zinc-200">Hours</th>
-                                <th className="p-6 w-36 border-r border-zinc-200">Action</th>
-                                <th className="p-6 w-24 text-center border-r border-zinc-200">Chunk</th>
-                                <th className="p-6 w-24 text-center border-r border-zinc-200">Recall</th>
-                                <th className="p-6 w-24 text-center border-r border-zinc-200">Effort</th>
-                                <th className="p-6 w-24 text-center border-r border-zinc-200">Time</th>
-                                <th className="p-6 w-32 border-r border-zinc-200">Dates</th>
-                                <th className="p-6 w-24 border-r border-zinc-200">Day Name</th>
-                                <th className="p-6 w-32 border-r border-zinc-200">Start Time</th>
-                                <th className="p-6 w-32 border-r border-zinc-200">End Time</th>
-                                <th className="p-6 w-24 text-center border-r border-zinc-200">Actual (min)</th>
-                                <th className="p-6 w-24 text-center border-r border-zinc-200">Difference</th>
-                                <th className="p-6 w-24 text-center border-r border-zinc-200">Gap</th>
-                                <th className="p-6 w-48 border-r border-zinc-200">Comment</th>
-                                <th className="p-6 w-20 text-center">Done</th>
+                              <tr className="bg-zinc-50/80 border-b border-zinc-200">
+                                <th className="p-6 w-20 text-center border-r border-zinc-200">
+                                  <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-400 italic">Session</span>
+                                </th>
+                                <th className="p-6 w-40 border-r border-zinc-200">
+                                  <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-400 italic">Action Type</span>
+                                </th>
+                                <th className="p-6 w-24 text-center border-r border-zinc-200">
+                                  <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-400 italic">Chunk</span>
+                                </th>
+                                <th className="p-6 w-24 text-center border-r border-zinc-200">
+                                  <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-400 italic">Recall</span>
+                                </th>
+                                <th className="p-6 w-24 text-center border-r border-zinc-200">
+                                  <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-400 italic">Effort</span>
+                                </th>
+                                <th className="p-6 w-24 text-center border-r border-zinc-200">
+                                  <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-400 italic">Target</span>
+                                </th>
+                                <th className="p-6 w-48 border-r border-zinc-200">
+                                  <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-400 italic">Timeline</span>
+                                </th>
+                                <th className="p-6 w-24 text-center border-r border-zinc-200">
+                                  <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-400 italic">Actual</span>
+                                </th>
+                                <th className="p-6 w-24 text-center border-r border-zinc-200">
+                                  <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-400 italic">Diff</span>
+                                </th>
+                                <th className="p-6 w-24 text-center border-r border-zinc-200">
+                                  <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-400 italic">Gap</span>
+                                </th>
+                                <th className="p-6 w-64 border-r border-zinc-200">
+                                  <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-400 italic">Insights & Gaps</span>
+                                </th>
+                                <th className="p-6 w-20 text-center">
+                                  <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-400 italic">Status</span>
+                                </th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-zinc-200">
+                            <tbody className="divide-y divide-zinc-100">
                               {activeCycle?.days.map((day) => (
                                 <React.Fragment key={day.id}>
                                   {day.chunks.map((chunk) => {
                                     const firstBlock = chunk.blocks[0];
                                     const lastBlock = chunk.blocks[chunk.blocks.length - 1];
-                                    
-                                    const derivedStartTime = firstBlock ? formatTimeOnly(firstBlock.startTime) : chunk.startTime;
-                                    const derivedEndTime = lastBlock ? formatTimeOnly(lastBlock.endTime) : chunk.endTime;
                                     
                                     const actual = (firstBlock && lastBlock) 
                                       ? Math.max(0, differenceInMinutes(parseISO(lastBlock.endTime), parseISO(firstBlock.startTime)))
@@ -1137,7 +1363,7 @@ export default function App() {
                                         key={chunk.id}
                                         initial={{ opacity: 0 }}
                                         animate={{ opacity: 1 }}
-                                        className="group hover:bg-zinc-50/30 transition-colors cursor-pointer"
+                                        className="group hover:bg-zinc-50/50 transition-all cursor-pointer"
                                         onClick={() => {
                                           setSelectedChunkId(chunk.id);
                                           setView('detail');
@@ -1146,62 +1372,73 @@ export default function App() {
                                         {isFirstInSession && (
                                           <td 
                                             rowSpan={sessionRowSpan} 
-                                            className="p-6 text-center border-r border-zinc-200 bg-zinc-50/50 align-middle"
+                                            className="p-6 text-center border-r border-zinc-200 bg-zinc-50/30 align-middle"
                                           >
-                                            <div className="text-[10px] font-mono text-zinc-300 uppercase tracking-[0.2em] [writing-mode:vertical-rl] rotate-180 mx-auto">
-                                              Session {chunk.sessionId}
+                                            <div className="text-[11px] font-mono font-black text-zinc-900 uppercase tracking-[0.2em] [writing-mode:vertical-rl] rotate-180 mx-auto opacity-40 group-hover:opacity-100 transition-opacity">
+                                              S{chunk.sessionId}
                                             </div>
                                           </td>
                                         )}
                                         <td className="p-4 border-r border-zinc-100" onClick={e => e.stopPropagation()}>
-                                          {(() => {
-                                            const isSpecialProfile = activeCycle?.profile === 'OfficeWorker' || activeCycle?.profile === 'Intensive';
-                                            const chunkColor = chunk.name === 'A' ? "bg-red-600" :
-                                                             chunk.name === 'B' ? "bg-pink-600" :
-                                                             chunk.name === 'C' ? "bg-blue-600" :
-                                                             chunk.name === 'D' ? "bg-zinc-900" :
-                                                             "bg-purple-800";
-                                            return (
-                                              <div className={cn(
-                                                "w-full px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-center rounded-xl shadow-sm text-white",
-                                                (isSpecialProfile && chunk.type === 'Prepare') ? chunkColor :
-                                                chunk.type === 'Prepare' ? "bg-red-600" : 
-                                                chunk.type === 'Review' ? "bg-emerald-600" : 
-                                                "bg-zinc-900"
-                                              )}>
-                                                {chunk.type} {chunk.sessionName && `- ${chunk.sessionName}`}
-                                              </div>
-                                            );
-                                          })()}
+                                          <div className="flex flex-col gap-1">
+                                            {(() => {
+                                              const isSpecialProfile = activeCycle?.profile === 'OfficeWorker' || activeCycle?.profile === 'Intensive';
+                                              const chunkColor = chunk.name === 'A' ? "bg-red-500" :
+                                                               chunk.name === 'B' ? "bg-pink-500" :
+                                                               chunk.name === 'C' ? "bg-blue-500" :
+                                                               chunk.name === 'D' ? "bg-zinc-800" :
+                                                               "bg-purple-700";
+                                              return (
+                                                <div className={cn(
+                                                  "px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-center rounded-lg shadow-sm text-white",
+                                                  (isSpecialProfile && chunk.type === 'Prepare') ? chunkColor :
+                                                  chunk.type === 'Prepare' ? "bg-red-500" : 
+                                                  chunk.type === 'Review' ? "bg-emerald-500" : 
+                                                  "bg-zinc-800"
+                                                )}>
+                                                  {chunk.type}
+                                                </div>
+                                              );
+                                            })()}
+                                            {chunk.sessionName && (
+                                              <span className="text-[8px] font-mono font-bold text-zinc-400 uppercase tracking-widest text-center">{chunk.sessionName}</span>
+                                            )}
+                                          </div>
                                         </td>
                                         <td className="p-4 text-center border-r border-zinc-100">
                                           <span className={cn(
-                                            "text-[10px] font-bold font-mono px-4 py-2 rounded-xl text-white shadow-sm block uppercase tracking-widest",
-                                            chunk.name === 'A' ? "bg-red-600" :
-                                            chunk.name === 'B' ? "bg-pink-600" :
-                                            chunk.name === 'C' ? "bg-blue-600" :
-                                            chunk.name === 'D' ? "bg-zinc-900" :
-                                            "bg-purple-800"
+                                            "inline-block w-8 h-8 leading-8 rounded-full text-[12px] font-black font-mono text-white shadow-lg",
+                                            chunk.name === 'A' ? "bg-red-500 shadow-red-200" :
+                                            chunk.name === 'B' ? "bg-pink-500 shadow-pink-200" :
+                                            chunk.name === 'C' ? "bg-blue-500 shadow-blue-200" :
+                                            chunk.name === 'D' ? "bg-zinc-800 shadow-zinc-200" :
+                                            "bg-purple-700 shadow-purple-200"
                                           )}>
                                             {chunk.name}
                                           </span>
                                         </td>
                                         <td className="p-4 text-center border-r border-zinc-100" onClick={e => e.stopPropagation()}>
-                                          <select 
-                                            value={chunk.recallScore || 0}
-                                            onChange={(e) => updateChunk(chunk.id, { recallScore: parseInt(e.target.value) })}
-                                            className="bg-zinc-50 border border-zinc-100 rounded-lg px-2 py-1 text-[10px] font-mono font-bold outline-none focus:ring-2 ring-zinc-200 w-full"
-                                          >
-                                            {[0, 1, 2, 3, 4, 5].map(s => (
-                                              <option key={s} value={s}>{s}</option>
-                                            ))}
-                                          </select>
+                                          <div className="flex items-center justify-center gap-1">
+                                            <span className="text-[10px] font-mono font-bold text-zinc-400">{chunk.recallScore || 0}</span>
+                                            <div className="flex gap-0.5">
+                                              {[1, 2, 3, 4, 5].map(s => (
+                                                <div 
+                                                  key={s} 
+                                                  onClick={() => updateChunk(chunk.id, { recallScore: s })}
+                                                  className={cn(
+                                                    "w-1.5 h-3 rounded-full transition-all cursor-pointer",
+                                                    (chunk.recallScore || 0) >= s ? "bg-emerald-500" : "bg-zinc-100"
+                                                  )} 
+                                                />
+                                              ))}
+                                            </div>
+                                          </div>
                                         </td>
                                         <td className="p-4 text-center border-r border-zinc-100" onClick={e => e.stopPropagation()}>
                                           <select 
                                             value={chunk.effortLevel || 'Medium'}
                                             onChange={(e) => updateChunk(chunk.id, { effortLevel: e.target.value as any })}
-                                            className="bg-zinc-50 border border-zinc-100 rounded-lg px-2 py-1 text-[10px] font-mono font-bold outline-none focus:ring-2 ring-zinc-200 w-full"
+                                            className="bg-zinc-50 border border-zinc-100 rounded-lg px-2 py-1 text-[9px] font-mono font-bold outline-none focus:ring-2 ring-zinc-200 w-full uppercase"
                                           >
                                             {['Easy', 'Medium', 'Hard'].map(l => (
                                               <option key={l} value={l}>{l}</option>
@@ -1209,63 +1446,63 @@ export default function App() {
                                           </select>
                                         </td>
                                         <td className="p-4 text-center border-r border-zinc-100">
-                                          <div className="text-sm font-mono font-bold text-zinc-900">{chunk.plannedMin}</div>
+                                          <div className="text-xs font-mono font-black text-zinc-900">{chunk.plannedMin}m</div>
                                         </td>
                                         <td className="p-4 border-r border-zinc-100">
-                                          <div className="text-[10px] font-mono font-bold text-zinc-900">{chunk.date}</div>
-                                        </td>
-                                        <td className="p-4 border-r border-zinc-100">
-                                          <div className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest">{chunk.dayName}</div>
-                                        </td>
-                                        <td className="p-4 border-r border-zinc-100">
-                                          <div className="flex items-center gap-2 bg-zinc-50/50 border border-zinc-100 rounded-xl px-4 py-2 opacity-80">
-                                            <Clock size={12} className="text-zinc-400 shrink-0" />
-                                            <div className="text-[11px] font-mono font-bold text-zinc-900">
-                                              {chunk.blocks.length > 0 ? formatTimeOnly(chunk.blocks[0].startTime) : chunk.startTime}
-                                            </div>
-                                          </div>
-                                        </td>
-                                        <td className="p-4 border-r border-zinc-100">
-                                          <div className="flex items-center gap-2 bg-zinc-50/50 border border-zinc-100 rounded-xl px-4 py-2 opacity-80">
-                                            <Clock size={12} className="text-zinc-400 shrink-0" />
-                                            <div className="text-[11px] font-mono font-bold text-zinc-900">
-                                              {chunk.blocks.length > 0 ? formatTimeOnly(chunk.blocks[chunk.blocks.length - 1].endTime) : chunk.endTime}
+                                          <div className="flex items-center gap-3">
+                                            <div className="flex flex-col">
+                                              <span className="text-[9px] font-mono font-bold text-zinc-400 uppercase tracking-widest">{chunk.dayName} {chunk.date}</span>
+                                              <div className="flex items-center gap-2 mt-1">
+                                                <span className="text-[11px] font-mono font-black text-zinc-900">{chunk.blocks.length > 0 ? formatTimeOnly(chunk.blocks[0].startTime) : chunk.startTime}</span>
+                                                <ArrowRight size={10} className="text-zinc-300" />
+                                                <span className="text-[11px] font-mono font-black text-zinc-900">{chunk.blocks.length > 0 ? formatTimeOnly(chunk.blocks[chunk.blocks.length - 1].endTime) : chunk.endTime}</span>
+                                              </div>
                                             </div>
                                           </div>
                                         </td>
                                         <td className="p-4 text-center border-r border-zinc-100">
-                                          <div className="text-sm font-mono font-bold text-zinc-400">{actual}</div>
+                                          <div className="text-xs font-mono font-black text-zinc-400">{actual}m</div>
                                         </td>
                                         <td className="p-4 text-center border-r border-zinc-100">
                                           <div className={cn(
-                                            "text-sm font-mono font-bold",
+                                            "text-xs font-mono font-black",
                                             diff < 0 ? "text-red-500" : "text-emerald-500"
                                           )}>
-                                            {diff}
+                                            {diff > 0 ? `+${diff}` : diff}m
                                           </div>
                                         </td>
                                         <td className="p-4 text-center border-r border-zinc-100">
                                           <div className={cn(
-                                            "text-sm font-mono font-bold",
-                                            chunk.blocks.reduce((acc, b) => acc + b.gapMin, 0) > 0 ? "text-red-500" : "text-zinc-400"
+                                            "text-xs font-mono font-black",
+                                            chunk.blocks.reduce((acc, b) => acc + b.gapMin, 0) > 0 ? "text-amber-500" : "text-zinc-300"
                                           )}>
                                             {chunk.blocks.reduce((acc, b) => acc + b.gapMin, 0)}m
                                           </div>
                                         </td>
                                         <td className="p-4 border-r border-zinc-100">
-                                          <div className="text-[10px] font-mono text-zinc-400 whitespace-pre-wrap max-h-20 overflow-y-auto">
-                                            {chunk.blocks.filter(b => b.gapReason).map(b => `${b.technique}: ${b.gapReason}`).join('\n')}
+                                          <div className="space-y-1 max-h-16 overflow-y-auto pr-2 scrollbar-thin">
+                                            {chunk.blocks.filter(b => b.gapReason || b.diffReason).map((b, i) => (
+                                              <div key={i} className="flex items-start gap-2">
+                                                <div className="w-1 h-1 bg-zinc-300 rounded-full mt-1.5 shrink-0" />
+                                                <p className="text-[9px] font-mono text-zinc-500 leading-tight italic">
+                                                  <span className="font-bold text-zinc-700 uppercase">{b.technique}:</span> {b.gapReason || b.diffReason}
+                                                </p>
+                                              </div>
+                                            ))}
+                                            {chunk.blocks.filter(b => b.gapReason || b.diffReason).length === 0 && (
+                                              <span className="text-[9px] font-mono text-zinc-300 italic">No gaps recorded</span>
+                                            )}
                                           </div>
                                         </td>
                                         <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
                                           <button 
                                             onClick={() => updateChunk(chunk.id, { done: !chunk.done })}
                                             className={cn(
-                                              "w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-sm",
-                                              chunk.done ? "bg-emerald-500 text-white" : "bg-zinc-100 text-zinc-300 hover:bg-zinc-200"
+                                              "w-10 h-10 rounded-2xl flex items-center justify-center transition-all shadow-lg",
+                                              chunk.done ? "bg-emerald-500 text-white shadow-emerald-200" : "bg-zinc-100 text-zinc-300 hover:bg-zinc-200 shadow-zinc-100"
                                             )}
                                           >
-                                            <Check size={20} />
+                                            <Check size={20} strokeWidth={3} />
                                           </button>
                                         </td>
                                       </motion.tr>
@@ -1277,6 +1514,30 @@ export default function App() {
                           </table>
                         </div>
                       </div>
+                    </motion.div>
+                  ) : view === 'mastery' ? (
+                    <motion.div
+                      key="mastery"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      className="space-y-8"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <h2 className="text-4xl font-serif italic text-zinc-900">Mastery Roadmap</h2>
+                          <p className="text-xs font-mono text-zinc-400 uppercase tracking-widest">Architectural blueprint for cognitive dominance</p>
+                        </div>
+                        <button 
+                          onClick={() => setView('overview')}
+                          className="flex items-center gap-3 text-[10px] font-mono uppercase bg-zinc-100 text-zinc-600 px-8 py-4 rounded-2xl hover:bg-zinc-200 transition-all group"
+                        >
+                          <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" /> 
+                          Back to Grid
+                        </button>
+                      </div>
+                      
+                      <MasterLearningFramework onApplyTemplate={applyTemplateToActiveCycle} />
                     </motion.div>
                   ) : view === 'detail' && selectedChunk ? (
                     <motion.div 
@@ -1754,6 +2015,15 @@ export default function App() {
                       General Manual
                     </button>
                     <button 
+                      onClick={() => setManualTab('mlf')}
+                      className={cn(
+                        "px-6 py-3 text-[10px] font-mono uppercase tracking-widest transition-all border-b-2",
+                        manualTab === 'mlf' ? "border-indigo-500 text-indigo-600 font-bold" : "border-transparent text-zinc-400 hover:text-zinc-600"
+                      )}
+                    >
+                      Master Framework
+                    </button>
+                    <button 
                       onClick={() => setManualTab('docprep')}
                       className={cn(
                         "px-6 py-3 text-[10px] font-mono uppercase tracking-widest transition-all border-b-2",
@@ -1873,6 +2143,33 @@ export default function App() {
                         </ul>
                       </section>
 
+                      <section className="p-8 bg-red-50 border border-red-100 rounded-[2rem] space-y-4">
+                        <div className="flex items-center gap-3">
+                          <RefreshCw className="text-red-500" size={18} />
+                          <h3 className="text-xs font-mono uppercase tracking-widest text-red-600 font-bold">System Maintenance</h3>
+                        </div>
+                        <p className="text-xs text-red-700 leading-relaxed">
+                          If you are experiencing issues or cannot see recent updates, use the button below to clear the local application state and force a refresh. 
+                          <strong> Warning: This will delete all your current study data.</strong>
+                        </p>
+                        <button 
+                          onClick={() => {
+                            showConfirm(
+                              'Hard Reset',
+                              'Are you sure you want to perform a hard reset? This will clear all your study data and progress.',
+                              () => {
+                                localStorage.clear();
+                                sessionStorage.clear();
+                                window.location.href = window.location.origin + '?v=' + Date.now();
+                              }
+                            );
+                          }}
+                          className="px-6 py-3 bg-red-600 text-white rounded-xl font-mono uppercase tracking-widest text-[10px] hover:bg-red-700 transition-all shadow-lg shadow-red-200"
+                        >
+                          Clear Cache & Hard Reset
+                        </button>
+                      </section>
+
                       <section className="space-y-4">
                         <h3 className="text-xs font-mono uppercase tracking-widest text-zinc-400 font-bold">4. Dynamic Sessions</h3>
                         <p className="text-sm text-zinc-600 leading-relaxed">
@@ -1882,6 +2179,17 @@ export default function App() {
                         </p>
                       </section>
                     </div>
+                  ) : manualTab === 'mlf' ? (
+                    <MasterLearningFramework 
+                      onApplyTemplate={(template) => {
+                        if (selectedChunk) {
+                          regenerateBlocks(selectedChunk.id, template);
+                          showAlert("Template Applied", `Applied ${TECHNIQUE_TEMPLATES[template].name} to Chunk ${selectedChunk.name}`);
+                        } else {
+                          showAlert("No Selection", "Please select a chunk in the main view first to apply this template.");
+                        }
+                      }} 
+                    />
                   ) : manualTab === 'docprep' ? (
                     <DocumentPrepManual />
                   ) : manualTab === 'simulation' ? (
@@ -1909,6 +2217,73 @@ export default function App() {
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+      {/* Custom Modal System */}
+      <AnimatePresence>
+        {modal.show && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setModal({ ...modal, show: false })}
+              className="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-2xl border border-zinc-100 overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-3xl rounded-full -mr-16 -mt-16" />
+              
+              <div className="relative space-y-6">
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    "w-10 h-10 rounded-2xl flex items-center justify-center",
+                    modal.type === 'confirm' ? "bg-red-50 text-red-500" : "bg-indigo-50 text-indigo-500"
+                  )}>
+                    {modal.type === 'confirm' ? <ShieldAlert size={20} /> : <CheckCircle2 size={20} />}
+                  </div>
+                  <h3 className="text-lg font-display font-bold text-zinc-900">{modal.title}</h3>
+                </div>
+
+                <p className="text-sm text-zinc-500 leading-relaxed">
+                  {modal.message}
+                </p>
+
+                <div className="flex items-center gap-3 pt-2">
+                  {modal.type === 'confirm' ? (
+                    <>
+                      <button
+                        onClick={() => {
+                          modal.onConfirm?.();
+                          setModal({ ...modal, show: false });
+                        }}
+                        className="flex-1 py-3 bg-red-600 text-white rounded-xl font-mono uppercase tracking-widest text-[10px] font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200"
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        onClick={() => setModal({ ...modal, show: false })}
+                        className="flex-1 py-3 bg-zinc-100 text-zinc-600 rounded-xl font-mono uppercase tracking-widest text-[10px] font-bold hover:bg-zinc-200 transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => setModal({ ...modal, show: false })}
+                      className="w-full py-3 bg-zinc-900 text-white rounded-xl font-mono uppercase tracking-widest text-[10px] font-bold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200"
+                    >
+                      Dismiss
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

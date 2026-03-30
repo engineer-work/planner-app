@@ -1,4 +1,4 @@
-import { StudyCycle, PlannerData, StudyDay, StudyChunk, StudyBlock, DEFAULT_TECHNIQUES, SIMULATION_PREP_TECHNIQUES, StudyProfile, PROFILE_CONFIGS } from './types';
+import { StudyCycle, PlannerData, StudyDay, StudyChunk, StudyBlock, DEFAULT_TECHNIQUES, SIMULATION_PREP_TECHNIQUES, StudyProfile, PROFILE_CONFIGS, TECHNIQUE_TEMPLATES, TechniqueTemplate } from './types';
 import { addDays, format } from 'date-fns';
 
 const getSpacedRepetitionChunks = (
@@ -28,6 +28,15 @@ const getSpacedRepetitionChunks = (
     return sessionName;
   };
   
+  if (profile === 'MasteryPath') {
+    const mlfLevels: TechniqueTemplate[] = ['MLF_A_Plus', 'MLF_S', 'MLF_S_Plus', 'MLF_S_Double_Plus', 'MLF_S_Triple_Plus'];
+    const levelIndex = (dayNumber - 1) % mlfLevels.length;
+    const template = mlfLevels[levelIndex];
+    const mins = 240; // 4 hours as per profile
+    chunks.push(createChunk(dayNumber, 'M', 'Prepare', mins, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + mins), profile, `Mastery ${template.split('_').pop()}`, template));
+    return chunks;
+  }
+
   if (dayNumber === 1) {
     const mins = Math.round(180 * scale);
     chunks.push(createChunk(dayNumber, 'A', 'Prepare', mins, dateStr, dayName, startTimeStr(currentMins), startTimeStr(currentMins + mins), profile, getSessName('A', 'Prepare')));
@@ -128,7 +137,7 @@ export const createInitialCycle = (
     let chunks: StudyChunk[] = [];
 
     // Only add chunks for specific LTM days or the initial 5-day learning phase
-    if (i <= 5 || [7, 10, 15, 30].includes(i)) {
+    if (i <= 5 || [7, 10, 15, 30].includes(i) || profile === 'MasteryPath') {
       if (profile === 'Intensive') {
         // 15 hours per day, 5 sessions of 3 hours each
         // For Intensive, we compress the 5-day cycle into a single day
@@ -150,6 +159,9 @@ export const createInitialCycle = (
           const startHour = 8 + (j - 1);
           chunks = [...chunks, ...getSpacedRepetitionChunks(i, dateStr, dayName, startHour, 0, profile, extraFields.session || 'Session 1')];
         }
+      } else if (profile === 'MasteryPath') {
+        // Mastery Path - 1 session per day (4 hours)
+        chunks = getSpacedRepetitionChunks(i, dateStr, dayName, 10, 0, profile, 'Mastery Session');
       } else {
         // Office Worker - 1 session per day (3 hours)
         chunks = getSpacedRepetitionChunks(i, dateStr, dayName, 19, 0, profile, extraFields.session || 'Session 1');
@@ -184,6 +196,7 @@ export const createInitialStore = (): PlannerData => {
   return {
     activeCycleId: null,
     cycles: [],
+    spacedRepetitionQueue: [],
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
   };
 };
@@ -198,9 +211,15 @@ const createChunk = (
   startTime: string = '08:00',
   endTime: string = '11:00',
   profile: StudyProfile = 'OfficeWorker',
-  sessionName: string = 'Session 1'
+  sessionName: string = 'Session 1',
+  template?: TechniqueTemplate
 ): StudyChunk => {
-  const techniques = DEFAULT_TECHNIQUES;
+  let techniques = DEFAULT_TECHNIQUES;
+  
+  if (template && TECHNIQUE_TEMPLATES[template]) {
+    techniques = TECHNIQUE_TEMPLATES[template].techniques;
+  }
+
   const totalDefaultTime = techniques.reduce((acc, t) => acc + t.time, 0);
   
   return {
@@ -218,6 +237,7 @@ const createChunk = (
     urlLinks: '',
     notes: '',
     sessionName,
+    techniqueTemplate: template,
     blocks: techniques.map((t, idx) => {
       const scaledTime = Math.round((t.time / totalDefaultTime) * time);
       const finalTime = time > 0 ? Math.max(1, scaledTime) : 0;
